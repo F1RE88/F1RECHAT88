@@ -103,9 +103,11 @@ async def get_current_user(request: Request) -> dict:
         user = await db.users.find_one({"_id": ObjectId(payload["sub"])})
         if not user:
             raise HTTPException(status_code=401, detail="User not found")
-        user["_id"] = str(user["_id"])
+        user_id = str(user["_id"])
+        user.pop("_id", None)
         user.pop("password_hash", None)
         user.pop("plain_password", None)
+        user["id"] = user_id
         return user
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")
@@ -137,6 +139,9 @@ class AdminVerifyInput(BaseModel):
 
 class AdminChangeUsernameInput(BaseModel):
     new_username: str
+
+class ChatBackgroundInput(BaseModel):
+    background: str  # color code or "default"
 
 # --- Registration Step 1: Email Verification ---
 @api_router.post("/auth/verify-email")
@@ -238,11 +243,11 @@ async def upload_profile_image(request: Request, file: UploadFile = File(...)):
     user = await get_current_user(request)
     data = await file.read()
     ext = file.filename.split(".")[-1] if "." in file.filename else "png"
-    path = f"{APP_NAME}/profiles/{user['_id']}/{uuid.uuid4()}.{ext}"
+    path = f"{APP_NAME}/profiles/{user['id']}/{uuid.uuid4()}.{ext}"
     result = put_object(path, data, file.content_type or "image/png")
     storage_path = result["path"]
 
-    await db.users.update_one({"_id": ObjectId(user["_id"])}, {"$set": {"profile_image": storage_path}})
+    await db.users.update_one({"_id": ObjectId(user["id"])}, {"$set": {"profile_image": storage_path}})
     return {"path": storage_path}
 
 # --- Serve files ---
@@ -430,8 +435,8 @@ async def send_friend_request(input_data: FriendRequestInput, request: Request):
 
     existing = await db.friend_requests.find_one({
         "$or": [
-            {"from_id": user["_id"], "to_id": target_id},
-            {"from_id": target_id, "to_id": user["_id"]}
+            {"from_id": user["id"], "to_id": target_id},
+            {"from_id": target_id, "to_id": user["id"]}
         ],
         "status": "pending"
     }, {"_id": 0})
@@ -439,7 +444,7 @@ async def send_friend_request(input_data: FriendRequestInput, request: Request):
         raise HTTPException(status_code=400, detail="Friend request already exists")
 
     await db.friend_requests.insert_one({
-        "from_id": user["_id"],
+        "from_id": user["id"],
         "from_username": user["username"],
         "to_id": target_id,
         "to_username": target["username"],
@@ -452,7 +457,7 @@ async def send_friend_request(input_data: FriendRequestInput, request: Request):
 async def get_friend_requests(request: Request):
     user = await get_current_user(request)
     requests_list = await db.friend_requests.find(
-        {"to_id": user["_id"], "status": "pending"}, {"_id": 0}
+        {"to_id": user["id"], "status": "pending"}, {"_id": 0}
     ).to_list(100)
     for r in requests_list:
         if isinstance(r.get("from_id"), ObjectId):
@@ -465,7 +470,7 @@ async def get_friend_requests(request: Request):
 async def get_sent_requests(request: Request):
     user = await get_current_user(request)
     requests_list = await db.friend_requests.find(
-        {"from_id": user["_id"], "status": "pending"}, {"_id": 0}
+        {"from_id": user["id"], "status": "pending"}, {"_id": 0}
     ).to_list(100)
     for r in requests_list:
         if isinstance(r.get("from_id"), ObjectId):
@@ -481,7 +486,7 @@ async def accept_friend_request(input_data: FriendRequestInput, request: Request
 
     req = await db.friend_requests.find_one({
         "from_username": from_username,
-        "to_id": user["_id"],
+        "to_id": user["id"],
         "status": "pending"
     })
     if not req:
@@ -491,8 +496,8 @@ async def accept_friend_request(input_data: FriendRequestInput, request: Request
     if isinstance(from_id, ObjectId):
         from_id = str(from_id)
 
-    await db.users.update_one({"_id": ObjectId(user["_id"])}, {"$addToSet": {"friends": from_id}})
-    await db.users.update_one({"_id": ObjectId(from_id)}, {"$addToSet": {"friends": user["_id"]}})
+    await db.users.update_one({"_id": ObjectId(user["id"])}, {"$addToSet": {"friends": from_id}})
+    await db.users.update_one({"_id": ObjectId(from_id)}, {"$addToSet": {"friends": user["id"]}})
     await db.friend_requests.update_one({"_id": req["_id"]}, {"$set": {"status": "accepted"}})
     return {"message": f"You are now friends with @{from_username}"}
 
@@ -501,7 +506,7 @@ async def reject_friend_request(input_data: FriendRequestInput, request: Request
     user = await get_current_user(request)
     from_username = input_data.username.strip().lower().lstrip("@")
     result = await db.friend_requests.update_one(
-        {"from_username": from_username, "to_id": user["_id"], "status": "pending"},
+        {"from_username": from_username, "to_id": user["id"], "status": "pending"},
         {"$set": {"status": "rejected"}}
     )
     if result.modified_count == 0:
@@ -536,7 +541,7 @@ async def search_users(q: str, request: Request):
     if len(query) < 2:
         return []
     users = await db.users.find(
-        {"username": {"$regex": f"^{query}", "$options": "i"}, "_id": {"$ne": ObjectId(user["_id"])}},
+        {"username": {"$regex": f"^{query}", "$options": "i"}, "_id": {"$ne": ObjectId(user["id"])}},
         {"password_hash": 0, "plain_password": 0}
     ).to_list(10)
     results = []
@@ -552,7 +557,7 @@ async def send_message(input_data: MessageInput, request: Request):
     if input_data.receiver_id not in user.get("friends", []):
         raise HTTPException(status_code=403, detail="You can only message friends")
     msg_doc = {
-        "sender_id": user["_id"],
+        "sender_id": user["id"],
         "sender_username": user["username"],
         "receiver_id": input_data.receiver_id,
         "content": input_data.content,
@@ -568,12 +573,28 @@ async def get_messages(friend_id: str, request: Request):
     user = await get_current_user(request)
     messages = await db.messages.find(
         {"$or": [
-            {"sender_id": user["_id"], "receiver_id": friend_id},
-            {"sender_id": friend_id, "receiver_id": user["_id"]}
+            {"sender_id": user["id"], "receiver_id": friend_id},
+            {"sender_id": friend_id, "receiver_id": user["id"]}
         ]},
         {"_id": 0}
     ).sort("created_at", 1).to_list(200)
     return messages
+
+# --- User Settings ---
+@api_router.put("/settings/chat-background")
+async def update_chat_background(input_data: ChatBackgroundInput, request: Request):
+    user = await get_current_user(request)
+    await db.users.update_one(
+        {"_id": ObjectId(user["id"])},
+        {"$set": {"chat_background": input_data.background}}
+    )
+    return {"message": "Chat background updated", "background": input_data.background}
+
+@api_router.get("/settings/chat-background")
+async def get_chat_background(request: Request):
+    user = await get_current_user(request)
+    user_doc = await db.users.find_one({"_id": ObjectId(user["id"])}, {"chat_background": 1, "_id": 0})
+    return {"background": user_doc.get("chat_background", "default") if user_doc else "default"}
 
 # --- Startup ---
 @app.on_event("startup")

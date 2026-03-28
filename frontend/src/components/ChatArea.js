@@ -1,16 +1,49 @@
 import React, { useState, useRef, useEffect } from "react";
-import { Send, Smile, Paperclip, MoreVertical, LogOut, ArrowRight, Shield } from "lucide-react";
+import { Send, Smile, Paperclip, MoreVertical, LogOut, ArrowRight, Shield, Palette, X } from "lucide-react";
+import axios from "axios";
 
 const LOGO_URL = "https://customer-assets.emergentagent.com/job_secure-social-hub-2/artifacts/dki0o21d_LOGO.png";
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
+const CHAT_BACKGROUNDS = [
+  { id: "default", label: "Default", value: "#050505" },
+  { id: "dark-gray", label: "Dark Gray", value: "#111111" },
+  { id: "midnight", label: "Midnight", value: "#0D1117" },
+  { id: "deep-navy", label: "Deep Navy", value: "#0A1628" },
+  { id: "charcoal", label: "Charcoal", value: "#1A1A2E" },
+  { id: "dark-green", label: "Dark Forest", value: "#0A1A0F" },
+  { id: "dark-red", label: "Dark Wine", value: "#1A0A0A" },
+  { id: "dark-purple", label: "Dark Purple", value: "#120A1A" },
+  { id: "gradient-1", label: "Ember", value: "linear-gradient(135deg, #0A0A0A 0%, #1A0A0A 100%)" },
+  { id: "gradient-2", label: "Ocean", value: "linear-gradient(135deg, #0A0A0A 0%, #0A0D1A 100%)" },
+  { id: "gradient-3", label: "Forest", value: "linear-gradient(135deg, #0A0A0A 0%, #0A1A0F 100%)" },
+  { id: "pattern-dots", label: "Dots", value: "#050505", pattern: "radial-gradient(circle, #1A1A1A 1px, transparent 1px)" },
+];
+
 export default function ChatArea({ selectedFriend, messages, onSendMessage, currentUser, onLogout, onBack, onOpenAdmin }) {
   const [messageText, setMessageText] = useState("");
+  const [showBgPicker, setShowBgPicker] = useState(false);
+  const [chatBg, setChatBg] = useState("default");
   const messagesEndRef = useRef(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // Load saved background
+  useEffect(() => {
+    const loadBg = async () => {
+      try {
+        const { data } = await axios.get(`${API}/settings/chat-background`, { withCredentials: true });
+        if (data.background && data.background !== "default") {
+          setChatBg(data.background);
+        }
+      } catch {
+        // ignore
+      }
+    };
+    loadBg();
+  }, []);
 
   const handleSend = (e) => {
     e.preventDefault();
@@ -19,11 +52,36 @@ export default function ChatArea({ selectedFriend, messages, onSendMessage, curr
     setMessageText("");
   };
 
+  const handleBgChange = async (bgId) => {
+    setChatBg(bgId);
+    setShowBgPicker(false);
+    try {
+      await axios.put(`${API}/settings/chat-background`, { background: bgId }, { withCredentials: true });
+    } catch {
+      // ignore
+    }
+  };
+
   const getProfileImageUrl = (friend) => {
     if (friend?.profile_image) {
       return `${API}/files/${friend.profile_image}`;
     }
     return null;
+  };
+
+  const getBgStyle = () => {
+    const bg = CHAT_BACKGROUNDS.find(b => b.id === chatBg) || CHAT_BACKGROUNDS[0];
+    const style = {};
+    if (bg.value.startsWith("linear-gradient")) {
+      style.background = bg.value;
+    } else {
+      style.backgroundColor = bg.value;
+    }
+    if (bg.pattern) {
+      style.backgroundImage = bg.pattern;
+      style.backgroundSize = "20px 20px";
+    }
+    return style;
   };
 
   if (!selectedFriend) {
@@ -49,6 +107,14 @@ export default function ChatArea({ selectedFriend, messages, onSendMessage, curr
               <span className="hidden sm:inline">Admin</span>
             </button>
             <button
+              data-testid="bg-picker-button"
+              onClick={() => setShowBgPicker(!showBgPicker)}
+              className="text-gray-400 hover:text-gray-200 transition-colors p-2 hover:bg-neutral-800 rounded-lg"
+              title="Change chat background"
+            >
+              <Palette className="w-4 h-4" />
+            </button>
+            <button
               data-testid="logout-button"
               onClick={onLogout}
               className="text-gray-500 hover:text-red-400 transition-colors p-2 hover:bg-neutral-800 rounded-lg"
@@ -59,8 +125,17 @@ export default function ChatArea({ selectedFriend, messages, onSendMessage, curr
           </div>
         </div>
 
+        {/* Background Picker */}
+        {showBgPicker && (
+          <BackgroundPicker
+            current={chatBg}
+            onSelect={handleBgChange}
+            onClose={() => setShowBgPicker(false)}
+          />
+        )}
+
         {/* Empty state */}
-        <div className="flex-1 flex items-center justify-center">
+        <div className="flex-1 flex items-center justify-center" style={getBgStyle()}>
           <div className="text-center">
             <img src={LOGO_URL} alt="F1RECHAT" className="w-24 h-24 mx-auto mb-4 opacity-30" />
             <p className="text-gray-600 font-['Tajawal']">Select a friend to start chatting</p>
@@ -132,6 +207,14 @@ export default function ChatArea({ selectedFriend, messages, onSendMessage, curr
             <span className="hidden sm:inline">Admin</span>
           </button>
           <button
+            data-testid="bg-picker-button-chat"
+            onClick={() => setShowBgPicker(!showBgPicker)}
+            className="text-gray-400 hover:text-gray-200 transition-colors p-2 hover:bg-neutral-800 rounded-lg"
+            title="Change chat background"
+          >
+            <Palette className="w-4 h-4" />
+          </button>
+          <button
             data-testid="logout-button"
             onClick={onLogout}
             className="text-gray-500 hover:text-red-400 transition-colors p-2 hover:bg-neutral-800 rounded-lg"
@@ -142,8 +225,17 @@ export default function ChatArea({ selectedFriend, messages, onSendMessage, curr
         </div>
       </div>
 
+      {/* Background Picker */}
+      {showBgPicker && (
+        <BackgroundPicker
+          current={chatBg}
+          onSelect={handleBgChange}
+          onClose={() => setShowBgPicker(false)}
+        />
+      )}
+
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3" data-testid="messages-container">
+      <div className="flex-1 overflow-y-auto p-4 space-y-3" style={getBgStyle()} data-testid="messages-container">
         {messages.length === 0 ? (
           <div className="flex items-center justify-center h-full">
             <p className="text-gray-600 text-sm font-['Tajawal']">No messages yet, start the conversation!</p>
@@ -154,7 +246,7 @@ export default function ChatArea({ selectedFriend, messages, onSendMessage, curr
             return (
               <div
                 key={idx}
-                className={`flex ${isMine ? "justify-start" : "justify-end"} animate-fade-in`}
+                className={`flex ${isMine ? "justify-end" : "justify-start"} animate-fade-in`}
                 data-testid={`message-${idx}`}
               >
                 <div
@@ -202,6 +294,38 @@ export default function ChatArea({ selectedFriend, messages, onSendMessage, curr
           </button>
         </div>
       </form>
+    </div>
+  );
+}
+
+function BackgroundPicker({ current, onSelect, onClose }) {
+  return (
+    <div className="absolute top-14 right-0 z-30 w-72 bg-[#0A0A0A] border border-neutral-800 rounded-xl shadow-2xl shadow-black/60 p-3 animate-fade-in" data-testid="bg-picker-panel">
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-sm font-semibold text-white font-['Cairo']">Chat Background</p>
+        <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors">
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+      <div className="grid grid-cols-4 gap-2">
+        {CHAT_BACKGROUNDS.map((bg) => (
+          <button
+            key={bg.id}
+            data-testid={`bg-option-${bg.id}`}
+            onClick={() => onSelect(bg.id)}
+            className={`w-full aspect-square rounded-lg border-2 transition-all hover:scale-105 ${
+              current === bg.id ? "border-red-500 ring-1 ring-red-500/50" : "border-neutral-700 hover:border-neutral-500"
+            }`}
+            style={{
+              background: bg.value.startsWith("linear") ? bg.value : bg.value,
+              backgroundImage: bg.pattern || undefined,
+              backgroundSize: bg.pattern ? "10px 10px" : undefined,
+            }}
+            title={bg.label}
+          />
+        ))}
+      </div>
+      <p className="text-xs text-gray-500 mt-2 text-center font-['Tajawal']">Choose your chat background</p>
     </div>
   );
 }
