@@ -53,6 +53,14 @@ function AppRoutes() {
         }
       />
       <Route
+        path="/verify"
+        element={
+          <PublicRoute>
+            <LoginPage />
+          </PublicRoute>
+        }
+      />
+      <Route
         path="/"
         element={
           <ProtectedRoute>
@@ -67,7 +75,7 @@ function AppRoutes() {
 
 function App() {
   return (
-    <div className="App" dir="rtl">
+    <div className="App">
       <BrowserRouter>
         <AuthProvider>
           <AppRoutes />

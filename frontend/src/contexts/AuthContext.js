@@ -14,7 +14,7 @@ function formatApiErrorDetail(detail) {
 }
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null); // null = checking, false = not auth
+  const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
   const checkAuth = useCallback(async () => {
@@ -32,9 +32,9 @@ export function AuthProvider({ children }) {
     checkAuth();
   }, [checkAuth]);
 
-  const login = async (email, password) => {
+  const login = async (username, password) => {
     try {
-      const { data } = await axios.post(`${API}/auth/login`, { email, password }, { withCredentials: true });
+      const { data } = await axios.post(`${API}/auth/login`, { username, password }, { withCredentials: true });
       setUser(data);
       return { success: true };
     } catch (e) {
@@ -42,11 +42,31 @@ export function AuthProvider({ children }) {
     }
   };
 
-  const register = async (username, email, password) => {
+  const verifyEmail = async (email) => {
     try {
-      const { data } = await axios.post(`${API}/auth/register`, { username, email, password }, { withCredentials: true });
+      const { data } = await axios.post(`${API}/auth/verify-email`, { email });
+      return { success: true, data };
+    } catch (e) {
+      return { success: false, error: formatApiErrorDetail(e.response?.data?.detail) || e.message };
+    }
+  };
+
+  const completeRegister = async (token, username, password) => {
+    try {
+      const { data } = await axios.post(`${API}/auth/complete-register`, { token, username, password }, { withCredentials: true });
       setUser(data);
       return { success: true };
+    } catch (e) {
+      return { success: false, error: formatApiErrorDetail(e.response?.data?.detail) || e.message };
+    }
+  };
+
+  const uploadProfileImage = async (file) => {
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const { data } = await axios.post(`${API}/auth/upload-profile-image`, formData, { withCredentials: true });
+      return { success: true, path: data.path };
     } catch (e) {
       return { success: false, error: formatApiErrorDetail(e.response?.data?.detail) || e.message };
     }
@@ -62,7 +82,7 @@ export function AuthProvider({ children }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout, checkAuth }}>
+    <AuthContext.Provider value={{ user, loading, login, verifyEmail, completeRegister, uploadProfileImage, logout, checkAuth }}>
       {children}
     </AuthContext.Provider>
   );

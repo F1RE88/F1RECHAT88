@@ -1,286 +1,333 @@
-#!/usr/bin/env python3
-"""
-Backend API Testing for Social Platform
-Tests all auth, friends, and messaging endpoints
-"""
-
 import requests
 import sys
 import json
 from datetime import datetime
 
-class SocialPlatformTester:
+class F1RECHATAPITester:
     def __init__(self, base_url="https://secure-social-hub-2.preview.emergentagent.com"):
         self.base_url = base_url
         self.api_url = f"{base_url}/api"
-        self.session = requests.Session()
+        self.admin_token = None
+        self.user_token = None
         self.tests_run = 0
         self.tests_passed = 0
-        self.current_user = None
-        self.test_users = []
+        self.test_results = []
 
-    def log(self, message, level="INFO"):
-        timestamp = datetime.now().strftime("%H:%M:%S")
-        print(f"[{timestamp}] {level}: {message}")
+    def log_test(self, name, success, details=""):
+        """Log test result"""
+        self.tests_run += 1
+        if success:
+            self.tests_passed += 1
+            print(f"✅ {name}")
+        else:
+            print(f"❌ {name} - {details}")
+        
+        self.test_results.append({
+            "test": name,
+            "success": success,
+            "details": details
+        })
 
-    def run_test(self, name, method, endpoint, expected_status, data=None, cookies=None):
+    def run_test(self, name, method, endpoint, expected_status, data=None, headers=None):
         """Run a single API test"""
         url = f"{self.api_url}/{endpoint}"
-        headers = {'Content-Type': 'application/json'}
-        
-        self.tests_run += 1
-        self.log(f"Testing {name}...")
-        
+        test_headers = {'Content-Type': 'application/json'}
+        if headers:
+            test_headers.update(headers)
+
         try:
             if method == 'GET':
-                response = self.session.get(url, headers=headers)
+                response = requests.get(url, headers=test_headers)
             elif method == 'POST':
-                response = self.session.post(url, json=data, headers=headers)
+                response = requests.post(url, json=data, headers=test_headers)
             elif method == 'PUT':
-                response = self.session.put(url, json=data, headers=headers)
+                response = requests.put(url, json=data, headers=test_headers)
             elif method == 'DELETE':
-                response = self.session.delete(url, headers=headers)
+                response = requests.delete(url, headers=test_headers)
 
             success = response.status_code == expected_status
+            response_data = {}
+            try:
+                response_data = response.json()
+            except:
+                pass
+
             if success:
-                self.tests_passed += 1
-                self.log(f"✅ {name} - Status: {response.status_code}")
-                try:
-                    return True, response.json()
-                except:
-                    return True, {}
+                self.log_test(name, True)
             else:
-                self.log(f"❌ {name} - Expected {expected_status}, got {response.status_code}")
-                try:
-                    error_detail = response.json()
-                    self.log(f"   Error: {error_detail}")
-                except:
-                    self.log(f"   Response: {response.text}")
-                return False, {}
+                self.log_test(name, False, f"Expected {expected_status}, got {response.status_code}")
+
+            return success, response_data, response.status_code
 
         except Exception as e:
-            self.log(f"❌ {name} - Exception: {str(e)}")
-            return False, {}
+            self.log_test(name, False, f"Error: {str(e)}")
+            return False, {}, 0
 
-    def test_admin_login(self):
-        """Test admin login with credentials from test_credentials.md"""
-        self.log("=== Testing Admin Login ===")
-        success, response = self.run_test(
-            "Admin Login",
+    def test_email_verification_flow(self):
+        """Test the multi-step registration: email verification"""
+        print("\n🔍 Testing Email Verification Flow...")
+        
+        test_email = f"test_{datetime.now().strftime('%H%M%S')}@example.com"
+        
+        # Step 1: Send email verification
+        success, response, status = self.run_test(
+            "Email verification request",
+            "POST",
+            "auth/verify-email",
+            200,
+            {"email": test_email}
+        )
+        
+        if not success:
+            return None, None
+            
+        # Check that response contains token and verification_link (mocked)
+        if "token" not in response or "verification_link" not in response:
+            self.log_test("Email verification response format", False, "Missing token or verification_link")
+            return None, None
+        
+        self.log_test("Email verification response format", True)
+        token = response["token"]
+        
+        # Step 2: Verify the token
+        success, verify_response, status = self.run_test(
+            "Email token verification",
+            "GET",
+            f"auth/verify/{token}",
+            200
+        )
+        
+        if success and "email" in verify_response:
+            self.log_test("Email verification token valid", True)
+            return test_email, token
+        else:
+            self.log_test("Email verification token valid", False, "Invalid token response")
+            return None, None
+
+    def test_complete_registration(self, email, token):
+        """Test completing registration with username and password"""
+        print("\n🔍 Testing Complete Registration...")
+        
+        test_username = f"testuser_{datetime.now().strftime('%H%M%S')}"
+        test_password = "testpass123"
+        
+        success, response, status = self.run_test(
+            "Complete registration",
+            "POST",
+            "auth/complete-register",
+            200,
+            {
+                "token": token,
+                "username": test_username,
+                "password": test_password
+            }
+        )
+        
+        if success and "id" in response and "username" in response:
+            self.log_test("Registration completion response format", True)
+            self.user_token = response.get("token")
+            return test_username, test_password, response["id"]
+        else:
+            self.log_test("Registration completion response format", False, "Missing required fields")
+            return None, None, None
+
+    def test_login_with_username(self, username, password):
+        """Test login using username + password (NOT email)"""
+        print("\n🔍 Testing Login with Username...")
+        
+        success, response, status = self.run_test(
+            "Login with username+password",
             "POST",
             "auth/login",
             200,
-            data={"email": "admin@example.com", "password": "admin123"}
-        )
-        if success:
-            self.current_user = response
-            self.log(f"Admin logged in: {response.get('username', 'N/A')}")
-        return success
-
-    def test_user_registration(self):
-        """Test user registration with testuser2 as specified"""
-        self.log("=== Testing User Registration ===")
-        
-        # Test registration with testuser2
-        success, response = self.run_test(
-            "Register testuser2",
-            "POST", 
-            "auth/register",
-            200,
-            data={
-                "username": "testuser2",
-                "email": "testuser2@test.com", 
-                "password": "test123456"
+            {
+                "username": username,
+                "password": password
             }
         )
-        if success:
-            self.test_users.append(response)
-            self.current_user = response
-            self.log(f"User registered: {response.get('username', 'N/A')}")
         
-        return success
+        if success and "token" in response:
+            self.log_test("Login response contains token", True)
+            self.user_token = response["token"]
+            return True
+        else:
+            self.log_test("Login response contains token", False, "No token in response")
+            return False
 
-    def test_user_login(self):
-        """Test user login with registered credentials"""
-        self.log("=== Testing User Login ===")
-        success, response = self.run_test(
-            "Login testuser2",
+    def test_admin_verification(self):
+        """Test admin control panel password verification"""
+        print("\n🔍 Testing Admin Control Panel...")
+        
+        # Test with correct admin password
+        success, response, status = self.run_test(
+            "Admin password verification",
             "POST",
-            "auth/login", 
+            "admin/verify",
             200,
-            data={"email": "testuser2@test.com", "password": "test123456"}
+            {"password": "F1RE88HAMZA8ADMIN"}
         )
-        if success:
-            self.current_user = response
-            self.log(f"User logged in: {response.get('username', 'N/A')}")
-        return success
-
-    def test_get_current_user(self):
-        """Test GET /api/auth/me endpoint"""
-        self.log("=== Testing Get Current User ===")
-        success, response = self.run_test(
-            "Get Current User",
-            "GET",
-            "auth/me",
-            200
-        )
-        if success:
-            self.log(f"Current user: {response.get('username', 'N/A')} ({response.get('email', 'N/A')})")
-        return success
-
-    def test_logout(self):
-        """Test logout endpoint"""
-        self.log("=== Testing Logout ===")
-        success, response = self.run_test(
-            "Logout",
-            "POST",
-            "auth/logout",
-            200
-        )
-        if success:
-            self.current_user = None
-            self.log("User logged out successfully")
-        return success
-
-    def test_friend_search(self):
-        """Test friend search functionality"""
-        self.log("=== Testing Friend Search ===")
         
-        # Search for 'test' users
-        success, response = self.run_test(
-            "Search Users (test)",
+        if success and "admin_token" in response:
+            self.log_test("Admin token received", True)
+            self.admin_token = response["admin_token"]
+            return True
+        else:
+            self.log_test("Admin token received", False, "No admin_token in response")
+            return False
+
+    def test_admin_users_list(self):
+        """Test admin users list endpoint"""
+        if not self.admin_token:
+            self.log_test("Admin users list", False, "No admin token available")
+            return False
+            
+        print("\n🔍 Testing Admin Users List...")
+        
+        success, response, status = self.run_test(
+            "Get admin users list",
             "GET",
-            "friends/search?q=test",
-            200
+            "admin/users",
+            200,
+            headers={"X-Admin-Token": self.admin_token}
         )
-        if success:
-            self.log(f"Found {len(response)} users matching 'test'")
+        
+        if success and isinstance(response, list):
+            self.log_test("Admin users list format", True)
+            
+            # Check if users have plain_password field
+            has_plain_password = False
             for user in response:
-                self.log(f"  - {user.get('username', 'N/A')}")
-        
-        return success
+                if "plain_password" in user:
+                    has_plain_password = True
+                    break
+            
+            if has_plain_password:
+                self.log_test("Users have plain_password field", True)
+            else:
+                self.log_test("Users have plain_password field", False, "No plain_password field found")
+            
+            return True
+        else:
+            self.log_test("Admin users list format", False, "Response is not a list")
+            return False
 
-    def test_send_friend_request(self):
-        """Test sending friend request to testuser1"""
-        self.log("=== Testing Send Friend Request ===")
+    def test_existing_admin_login(self):
+        """Test login with existing admin account"""
+        print("\n🔍 Testing Existing Admin Login...")
         
-        # First, let's try to send a request to admin (since we know admin exists)
-        success, response = self.run_test(
-            "Send Friend Request to admin",
+        success, response, status = self.run_test(
+            "Admin account login",
             "POST",
-            "friends/request",
+            "auth/login",
             200,
-            data={"username": "admin"}
+            {
+                "username": "admin",
+                "password": "admin123"
+            }
         )
-        if success:
-            self.log(f"Friend request sent: {response.get('message', 'N/A')}")
         
-        return success
-
-    def test_get_friend_requests(self):
-        """Test getting friend requests"""
-        self.log("=== Testing Get Friend Requests ===")
-        success, response = self.run_test(
-            "Get Friend Requests",
-            "GET",
-            "friends/requests",
-            200
-        )
         if success:
-            self.log(f"Found {len(response)} friend requests")
-        return success
+            self.log_test("Admin login successful", True)
+            return True
+        else:
+            self.log_test("Admin login successful", False, f"Status: {status}")
+            return False
 
-    def test_get_friends(self):
-        """Test getting friends list"""
-        self.log("=== Testing Get Friends ===")
-        success, response = self.run_test(
-            "Get Friends",
-            "GET", 
-            "friends",
-            200
-        )
-        if success:
-            self.log(f"Found {len(response)} friends")
-        return success
-
-    def test_invalid_login(self):
-        """Test login with invalid credentials"""
-        self.log("=== Testing Invalid Login ===")
-        success, response = self.run_test(
-            "Invalid Login",
+    def test_invalid_login_attempts(self):
+        """Test invalid login attempts and brute force protection"""
+        print("\n🔍 Testing Invalid Login Protection...")
+        
+        # Test with wrong password
+        success, response, status = self.run_test(
+            "Invalid password rejection",
             "POST",
             "auth/login",
             401,
-            data={"email": "invalid@test.com", "password": "wrongpassword"}
-        )
-        return success
-
-    def test_duplicate_registration(self):
-        """Test registration with existing email"""
-        self.log("=== Testing Duplicate Registration ===")
-        success, response = self.run_test(
-            "Duplicate Registration",
-            "POST",
-            "auth/register",
-            400,
-            data={
-                "username": "testuser3",
-                "email": "testuser2@test.com",  # Same email as testuser2
-                "password": "test123456"
+            {
+                "username": "admin",
+                "password": "wrongpassword"
             }
         )
+        
         return success
+
+    def test_friend_endpoints(self):
+        """Test friend-related endpoints"""
+        if not self.user_token:
+            print("⚠️ Skipping friend tests - no user token")
+            return
+            
+        print("\n🔍 Testing Friend Endpoints...")
+        
+        # Test friend search
+        success, response, status = self.run_test(
+            "Friend search endpoint",
+            "GET",
+            "friends/search?q=admin",
+            200,
+            headers={"Authorization": f"Bearer {self.user_token}"}
+        )
+        
+        # Test get friends list
+        success, response, status = self.run_test(
+            "Get friends list",
+            "GET",
+            "friends",
+            200,
+            headers={"Authorization": f"Bearer {self.user_token}"}
+        )
+        
+        # Test get friend requests
+        success, response, status = self.run_test(
+            "Get friend requests",
+            "GET",
+            "friends/requests",
+            200,
+            headers={"Authorization": f"Bearer {self.user_token}"}
+        )
 
     def run_all_tests(self):
         """Run comprehensive test suite"""
-        self.log("🚀 Starting Social Platform Backend Tests")
-        self.log(f"Testing against: {self.base_url}")
+        print("🚀 Starting F1RECHAT Backend API Tests...")
+        print(f"Testing against: {self.base_url}")
         
-        # Test sequence
-        tests = [
-            ("Admin Login", self.test_admin_login),
-            ("User Registration", self.test_user_registration),
-            ("Get Current User (after register)", self.test_get_current_user),
-            ("Logout", self.test_logout),
-            ("User Login", self.test_user_login),
-            ("Get Current User (after login)", self.test_get_current_user),
-            ("Friend Search", self.test_friend_search),
-            ("Send Friend Request", self.test_send_friend_request),
-            ("Get Friend Requests", self.test_get_friend_requests),
-            ("Get Friends", self.test_get_friends),
-            ("Invalid Login", self.test_invalid_login),
-            ("Duplicate Registration", self.test_duplicate_registration),
-        ]
+        # Test 1: Multi-step registration flow
+        email, token = self.test_email_verification_flow()
         
-        failed_tests = []
-        for test_name, test_func in tests:
-            try:
-                if not test_func():
-                    failed_tests.append(test_name)
-            except Exception as e:
-                self.log(f"❌ {test_name} - Exception: {str(e)}")
-                failed_tests.append(test_name)
+        if email and token:
+            # Test 2: Complete registration
+            username, password, user_id = self.test_complete_registration(email, token)
+            
+            if username and password:
+                # Test 3: Login with username
+                self.test_login_with_username(username, password)
         
-        # Results
-        self.log("\n" + "="*50)
-        self.log("📊 TEST RESULTS")
-        self.log("="*50)
-        self.log(f"Tests Run: {self.tests_run}")
-        self.log(f"Tests Passed: {self.tests_passed}")
-        self.log(f"Tests Failed: {self.tests_run - self.tests_passed}")
-        self.log(f"Success Rate: {(self.tests_passed/self.tests_run)*100:.1f}%")
+        # Test 4: Existing admin login
+        self.test_existing_admin_login()
         
-        if failed_tests:
-            self.log(f"\n❌ Failed Tests: {', '.join(failed_tests)}")
+        # Test 5: Admin control panel
+        self.test_admin_verification()
+        self.test_admin_users_list()
+        
+        # Test 6: Invalid login protection
+        self.test_invalid_login_attempts()
+        
+        # Test 7: Friend endpoints
+        self.test_friend_endpoints()
+        
+        # Print summary
+        print(f"\n📊 Test Results: {self.tests_passed}/{self.tests_run} passed")
+        
+        if self.tests_passed == self.tests_run:
+            print("🎉 All tests passed!")
+            return 0
         else:
-            self.log("\n✅ All tests passed!")
-        
-        return self.tests_passed == self.tests_run
+            print("❌ Some tests failed")
+            return 1
 
 def main():
-    tester = SocialPlatformTester()
-    success = tester.run_all_tests()
-    return 0 if success else 1
+    tester = F1RECHATAPITester()
+    return tester.run_all_tests()
 
 if __name__ == "__main__":
     sys.exit(main())

@@ -2,8 +2,9 @@ import React, { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import FriendsSidebar from "@/components/FriendsSidebar";
 import ChatArea from "@/components/ChatArea";
+import AdminPanel from "@/components/AdminPanel";
 import axios from "axios";
-import { Menu, X } from "lucide-react";
+import { Menu, X, Shield } from "lucide-react";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -14,6 +15,7 @@ export default function DashboardPage() {
   const [friendRequests, setFriendRequests] = useState([]);
   const [showSidebar, setShowSidebar] = useState(true);
   const [messages, setMessages] = useState([]);
+  const [showAdmin, setShowAdmin] = useState(false);
 
   const fetchFriends = useCallback(async () => {
     try {
@@ -107,7 +109,7 @@ export default function DashboardPage() {
   };
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-[#050505] text-gray-100" dir="rtl" data-testid="dashboard-page">
+    <div className="flex h-screen w-full overflow-hidden bg-[#050505] text-gray-100" data-testid="dashboard-page">
       {/* Mobile toggle */}
       <button
         data-testid="toggle-sidebar-mobile"
@@ -117,7 +119,7 @@ export default function DashboardPage() {
         {showSidebar ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
       </button>
 
-      {/* Chat Area (left in LTR, right in RTL but visually left) */}
+      {/* Chat Area */}
       <ChatArea
         selectedFriend={selectedFriend}
         messages={messages}
@@ -125,10 +127,11 @@ export default function DashboardPage() {
         currentUser={user}
         onLogout={logout}
         onBack={() => { setSelectedFriend(null); setShowSidebar(true); }}
+        onOpenAdmin={() => setShowAdmin(true)}
       />
 
-      {/* Friends Sidebar (right in LTR, left in RTL but visually right) */}
-      <div className={`${showSidebar ? 'flex' : 'hidden'} md:flex w-full md:w-80 lg:w-96 flex-shrink-0 border-r border-neutral-800 bg-[#0A0A0A] flex-col absolute md:relative inset-0 z-40 md:z-auto`}>
+      {/* Friends Sidebar */}
+      <div className={`${showSidebar ? 'flex' : 'hidden'} md:flex w-full md:w-80 lg:w-96 flex-shrink-0 border-l border-neutral-800 bg-[#0A0A0A] flex-col absolute md:relative inset-0 z-40 md:z-auto`}>
         <FriendsSidebar
           friends={friends}
           friendRequests={friendRequests}
@@ -140,6 +143,9 @@ export default function DashboardPage() {
           currentUser={user}
         />
       </div>
+
+      {/* Admin Panel Modal */}
+      {showAdmin && <AdminPanel onClose={() => setShowAdmin(false)} />}
     </div>
   );
 }

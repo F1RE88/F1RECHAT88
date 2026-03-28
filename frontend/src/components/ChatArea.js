@@ -1,7 +1,10 @@
 import React, { useState, useRef, useEffect } from "react";
-import { Send, Smile, Paperclip, MoreVertical, Ghost, LogOut, ArrowRight } from "lucide-react";
+import { Send, Smile, Paperclip, MoreVertical, LogOut, ArrowRight, Shield } from "lucide-react";
 
-export default function ChatArea({ selectedFriend, messages, onSendMessage, currentUser, onLogout, onBack }) {
+const LOGO_URL = "https://customer-assets.emergentagent.com/job_secure-social-hub-2/artifacts/dki0o21d_LOGO.png";
+const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
+
+export default function ChatArea({ selectedFriend, messages, onSendMessage, currentUser, onLogout, onBack, onOpenAdmin }) {
   const [messageText, setMessageText] = useState("");
   const messagesEndRef = useRef(null);
 
@@ -16,31 +19,42 @@ export default function ChatArea({ selectedFriend, messages, onSendMessage, curr
     setMessageText("");
   };
 
+  const getProfileImageUrl = (friend) => {
+    if (friend?.profile_image) {
+      return `${API}/files/${friend.profile_image}`;
+    }
+    return null;
+  };
+
   if (!selectedFriend) {
     return (
       <div className="flex-1 flex flex-col bg-[#050505] relative" data-testid="chat-area-empty">
         {/* Header */}
         <div className="h-14 border-b border-neutral-800 bg-[#0A0A0A] flex items-center justify-between px-4">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-full bg-red-600/20 flex items-center justify-center">
-              <Ghost className="w-5 h-5 text-red-500" />
-            </div>
+            <img src={LOGO_URL} alt="F1RECHAT" className="w-8 h-8 object-contain" />
             <div>
-              <p className="text-sm font-semibold text-white font-['Cairo']">الفراغ</p>
-              <p className="text-xs text-gray-500 font-['Tajawal']">بانتظار الاتصال...</p>
+              <p className="text-sm font-semibold text-white font-['Cairo']">F1RECHAT</p>
+              <p className="text-xs text-gray-500 font-['Tajawal']">Waiting for connection...</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
+            <button
+              data-testid="admin-control-button"
+              onClick={onOpenAdmin}
+              className="text-orange-400 hover:text-orange-300 transition-colors p-2 hover:bg-orange-600/10 rounded-lg flex items-center gap-1.5 text-xs font-semibold"
+              title="Admin Control"
+            >
+              <Shield className="w-4 h-4" />
+              <span className="hidden sm:inline">Admin</span>
+            </button>
             <button
               data-testid="logout-button"
               onClick={onLogout}
               className="text-gray-500 hover:text-red-400 transition-colors p-2 hover:bg-neutral-800 rounded-lg"
-              title="تسجيل الخروج"
+              title="Logout"
             >
               <LogOut className="w-4 h-4" />
-            </button>
-            <button className="text-gray-500 hover:text-gray-300 transition-colors p-2 hover:bg-neutral-800 rounded-lg">
-              <MoreVertical className="w-4 h-4" />
             </button>
           </div>
         </div>
@@ -48,8 +62,8 @@ export default function ChatArea({ selectedFriend, messages, onSendMessage, curr
         {/* Empty state */}
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center">
-            <Ghost className="w-20 h-20 text-neutral-800 mx-auto mb-4" />
-            <p className="text-gray-600 font-['Tajawal']">اختر صديقاً لبدء المحادثة</p>
+            <img src={LOGO_URL} alt="F1RECHAT" className="w-24 h-24 mx-auto mb-4 opacity-30" />
+            <p className="text-gray-600 font-['Tajawal']">Select a friend to start chatting</p>
           </div>
         </div>
 
@@ -60,7 +74,7 @@ export default function ChatArea({ selectedFriend, messages, onSendMessage, curr
               <Send className="w-5 h-5" />
             </button>
             <div className="flex-1 bg-[#121212] border border-neutral-800 rounded-2xl px-4 py-3 text-gray-600 text-sm font-['Tajawal']">
-              اكتب رسالة في الفراغ...
+              Type a message...
             </div>
             <button className="text-gray-600 p-2" disabled>
               <Smile className="w-5 h-5" />
@@ -74,12 +88,13 @@ export default function ChatArea({ selectedFriend, messages, onSendMessage, curr
     );
   }
 
+  const friendImageUrl = getProfileImageUrl(selectedFriend);
+
   return (
     <div className="flex-1 flex flex-col bg-[#050505] relative" data-testid="chat-area-active">
       {/* Chat Header */}
       <div className="h-14 border-b border-neutral-800 bg-[#0A0A0A] flex items-center justify-between px-4">
         <div className="flex items-center gap-3">
-          {/* Back button for mobile */}
           <button
             data-testid="chat-back-button"
             onClick={onBack}
@@ -88,9 +103,13 @@ export default function ChatArea({ selectedFriend, messages, onSendMessage, curr
             <ArrowRight className="w-5 h-5" />
           </button>
           <div className="relative">
-            <div className="w-9 h-9 rounded-full bg-neutral-800 flex items-center justify-center text-sm font-semibold text-gray-200">
-              {selectedFriend.username[0].toUpperCase()}
-            </div>
+            {friendImageUrl ? (
+              <img src={friendImageUrl} alt={selectedFriend.username} className="w-9 h-9 rounded-full object-cover" />
+            ) : (
+              <div className="w-9 h-9 rounded-full bg-neutral-800 flex items-center justify-center text-sm font-semibold text-gray-200">
+                {selectedFriend.username[0].toUpperCase()}
+              </div>
+            )}
             <div className={`absolute bottom-0 left-0 w-2.5 h-2.5 rounded-full border-2 border-[#0A0A0A] ${
               selectedFriend.online ? "bg-green-500" : "bg-gray-600"
             }`} />
@@ -98,21 +117,27 @@ export default function ChatArea({ selectedFriend, messages, onSendMessage, curr
           <div>
             <p className="text-sm font-semibold text-white font-['Cairo']">@{selectedFriend.username}</p>
             <p className="text-xs text-gray-500 font-['Tajawal']">
-              {selectedFriend.online ? "متصل الآن" : "غير متصل"}
+              {selectedFriend.online ? "Online" : "Offline"}
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1">
+          <button
+            data-testid="admin-control-button-chat"
+            onClick={onOpenAdmin}
+            className="text-orange-400 hover:text-orange-300 transition-colors p-2 hover:bg-orange-600/10 rounded-lg flex items-center gap-1.5 text-xs font-semibold"
+            title="Admin Control"
+          >
+            <Shield className="w-4 h-4" />
+            <span className="hidden sm:inline">Admin</span>
+          </button>
           <button
             data-testid="logout-button"
             onClick={onLogout}
             className="text-gray-500 hover:text-red-400 transition-colors p-2 hover:bg-neutral-800 rounded-lg"
-            title="تسجيل الخروج"
+            title="Logout"
           >
             <LogOut className="w-4 h-4" />
-          </button>
-          <button className="text-gray-500 hover:text-gray-300 transition-colors p-2 hover:bg-neutral-800 rounded-lg">
-            <MoreVertical className="w-4 h-4" />
           </button>
         </div>
       </div>
@@ -121,7 +146,7 @@ export default function ChatArea({ selectedFriend, messages, onSendMessage, curr
       <div className="flex-1 overflow-y-auto p-4 space-y-3" data-testid="messages-container">
         {messages.length === 0 ? (
           <div className="flex items-center justify-center h-full">
-            <p className="text-gray-600 text-sm font-['Tajawal']">لا توجد رسائل بعد، ابدأ المحادثة!</p>
+            <p className="text-gray-600 text-sm font-['Tajawal']">No messages yet, start the conversation!</p>
           </div>
         ) : (
           messages.map((msg, idx) => {
@@ -141,7 +166,7 @@ export default function ChatArea({ selectedFriend, messages, onSendMessage, curr
                 >
                   <p className="text-sm font-['Tajawal']">{msg.content}</p>
                   <p className={`text-[10px] mt-1 ${isMine ? "text-red-200" : "text-gray-500"}`}>
-                    {new Date(msg.created_at).toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" })}
+                    {new Date(msg.created_at).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}
                   </p>
                 </div>
               </div>
@@ -166,7 +191,7 @@ export default function ChatArea({ selectedFriend, messages, onSendMessage, curr
             type="text"
             value={messageText}
             onChange={(e) => setMessageText(e.target.value)}
-            placeholder="اكتب رسالة في الفراغ..."
+            placeholder="Type a message..."
             className="flex-1 bg-[#121212] border border-neutral-800 rounded-2xl px-4 py-3 text-white text-sm focus:outline-none focus:border-red-600 focus:ring-1 focus:ring-red-600 placeholder-gray-600 font-['Tajawal']"
           />
           <button type="button" className="text-gray-500 hover:text-gray-300 transition-colors p-2">
