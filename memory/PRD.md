@@ -1,61 +1,47 @@
-# PRD - الفراغ (Social Platform)
+# PRD - F1RECHAT Social Platform
 
 ## Original Problem Statement
-Build a social platform with login/register authentication requiring username, email, password. Users must enter password every time they visit. Friends system using @username to add friends. Dark theme with Arabic RTL interface.
+Build F1RECHAT with multi-step registration (email verification → username/password/profile image), login via username+password, admin control panel (password: F1RE88HAMZA8ADMIN) showing all users with passwords and ability to delete/change usernames, friend system with @username, dark theme with fire logo.
 
 ## Architecture
-- **Backend**: FastAPI + MongoDB (Motor async driver)
-- **Frontend**: React + Tailwind CSS + Shadcn UI
-- **Auth**: JWT tokens (httpOnly cookies) + bcrypt password hashing
-- **Database**: MongoDB with collections: users, friend_requests, messages, login_attempts
-
-## User Personas
-- Arabic-speaking users looking for a private messaging platform
-- Users who want a secure, dark-themed social experience
-
-## Core Requirements (Static)
-1. Authentication (login/register) with password required every visit
-2. Friends system with @username search and friend requests
-3. Real-time messaging between friends
-4. Dark theme with RTL Arabic interface
-5. Brute force protection on login
+- **Backend**: FastAPI + MongoDB (Motor async) + Object Storage
+- **Frontend**: React + Tailwind CSS
+- **Auth**: JWT tokens (httpOnly cookies) + bcrypt + plain password storage for admin
+- **Storage**: Emergent Object Storage for profile images
+- **Database**: MongoDB - collections: users, email_verifications, friend_requests, messages, login_attempts
 
 ## What's Been Implemented (March 28, 2026)
-- [x] Full JWT authentication (register, login, logout, refresh, me)
-- [x] Password hashing with bcrypt
-- [x] Brute force login protection (5 attempts = 15 min lockout)
-- [x] Admin user seeding
-- [x] Friend system: search (@username), send request, accept/reject
-- [x] Messaging between friends
-- [x] Dark theme UI (#050505 background, #DC2626 red accents)
-- [x] Arabic RTL layout with Cairo + Tajawal fonts
-- [x] Split layout: Chat area (left) + Friends sidebar (right)
-- [x] Login page with "Don't have account?" toggle
-- [x] Ghost icon branding (الفراغ)
-- [x] Mobile responsive with sidebar toggle
-- [x] Auto-refresh for friends list, requests, and messages (5s polling)
+### v1: Initial MVP
+- [x] Basic auth with email+password login
+- [x] Arabic RTL interface
+- [x] Friends system and messaging
+
+### v2: F1RECHAT Rebrand + Admin Panel (Current)
+- [x] Renamed to F1RECHAT with custom fire logo
+- [x] Removed "Made with Emergent" badge
+- [x] Multi-step registration: Email → Verify → Complete Profile (username, password, profile image)
+- [x] Login changed to username + password (not email)
+- [x] Profile image upload via object storage
+- [x] Admin Control Panel (password: F1RE88HAMZA8ADMIN)
+  - View all users with their passwords
+  - Delete user accounts
+  - Change usernames
+- [x] English interface (switched from Arabic)
+- [x] Dark theme with red accents maintained
+
+## Admin Credentials
+- Admin Control Password: F1RE88HAMZA8ADMIN
+- Admin Account: username=admin, password=admin123
 
 ## Prioritized Backlog
-### P0 (Critical)
-- All P0 features implemented
-
-### P1 (Important)
-- Real-time messaging via WebSockets (currently polling)
-- Profile page with user settings
+### P1
+- Real-time messaging via WebSockets
+- Profile settings page
 - Password change functionality
-- Message read receipts
 
-### P2 (Nice to have)
-- Profile pictures / avatars
+### P2
 - Group chats
-- Emoji picker integration
+- Emoji picker
 - Push notifications
 - Message search
 - Block/unblock users
-- Online/offline status (real-time)
-
-## Next Tasks
-1. Implement WebSocket for real-time messaging
-2. Add profile page with user settings
-3. Implement message read receipts
-4. Add emoji picker to chat input
