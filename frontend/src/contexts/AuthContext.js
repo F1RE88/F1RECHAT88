@@ -47,7 +47,7 @@ export function AuthProvider({ children }) {
       const { data } = await axios.post(`${API}/auth/verify-email`, { email });
       return { success: true, data };
     } catch (e) {
-      return { success: false, error: formatApiErrorDetail(e.response?.data?.detail) || e.message };
+      return { success: false, error: formatApiErrorDetail(e.response?.data?.detail || e.response?.data) || e.message };
     }
   };
 
