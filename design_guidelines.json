@@ -1,0 +1,103 @@
+{
+  "theme": "dark",
+  "archetype": "5",
+  "archetype_name": "Jewel & Luxury (Dark Premium)",
+  "global_settings": {
+    "direction": "rtl",
+    "background_color": "#050505",
+    "text_color": "#F3F4F6",
+    "primary_accent": "#DC2626",
+    "secondary_accent": "#991B1B",
+    "surface_color": "#121212",
+    "surface_border": "#262626"
+  },
+  "typography": {
+    "primary_font": "Cairo",
+    "secondary_font": "Tajawal",
+    "headings": {
+      "font_family": "Cairo, sans-serif",
+      "h1": "text-4xl sm:text-5xl font-bold tracking-tight",
+      "h2": "text-2xl sm:text-3xl font-bold tracking-tight",
+      "h3": "text-xl sm:text-2xl font-semibold"
+    },
+    "body": {
+      "font_family": "Tajawal, sans-serif",
+      "base": "text-base leading-relaxed",
+      "small": "text-sm text-gray-400"
+    }
+  },
+  "colors": {
+    "background": "bg-[#050505]",
+    "surface": "bg-[#121212]",
+    "surface_hover": "hover:bg-[#1A1A1A]",
+    "primary": "bg-red-600",
+    "primary_hover": "hover:bg-red-700",
+    "text_main": "text-gray-100",
+    "text_muted": "text-gray-400",
+    "border": "border-neutral-800"
+  },
+  "layout": {
+    "app_container": "h-screen w-full flex bg-[#050505] text-gray-100 overflow-hidden font-sans",
+    "login_page": "min-h-screen flex items-center justify-center bg-[#050505] p-4 relative",
+    "main_dashboard": "flex h-screen w-full overflow-hidden flex-col md:flex-row",
+    "friends_sidebar": "w-full md:w-80 lg:w-96 flex-shrink-0 border-l border-neutral-800 bg-[#0A0A0A] flex flex-col order-1 md:order-2",
+    "chat_area": "flex-1 flex flex-col bg-[#050505] relative order-2 md:order-1"
+  },
+  "components": {
+    "input_field": {
+      "style": "w-full bg-[#121212] border border-neutral-800 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-red-600 focus:ring-1 focus:ring-red-600 transition-colors placeholder-gray-500",
+      "icon_wrapper": "absolute right-3 top-1/2 -translate-y-1/2 text-gray-400"
+    },
+    "button_primary": {
+      "style": "w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-3 px-4 rounded-lg transition-all active:scale-[0.98] shadow-[0_0_15px_rgba(220,38,38,0.2)] hover:shadow-[0_0_20px_rgba(220,38,38,0.4)] flex justify-center items-center gap-2"
+    },
+    "button_ghost": {
+      "style": "w-full text-gray-400 hover:text-white text-sm py-2 px-4 transition-colors"
+    },
+    "friend_list_item": {
+      "style": "flex items-center gap-3 p-3 rounded-lg hover:bg-[#1A1A1A] cursor-pointer transition-colors group",
+      "active_state": "bg-[#1A1A1A] border-r-2 border-red-600"
+    },
+    "message_bubble": {
+      "sent": "bg-red-600 text-white rounded-2xl rounded-tr-sm px-4 py-2 max-w-[80%] self-end",
+      "received": "bg-[#1A1A1A] text-gray-100 rounded-2xl rounded-tl-sm px-4 py-2 max-w-[80%] border border-neutral-800 self-start"
+    },
+    "chat_input_bar": {
+      "style": "p-4 border-t border-neutral-800 bg-[#0A0A0A] flex items-end gap-2",
+      "input": "flex-1 bg-[#121212] border border-neutral-800 rounded-2xl px-4 py-3 text-white focus:outline-none focus:border-red-600 focus:ring-1 focus:ring-red-600 min-h-[48px] max-h-[120px] resize-none"
+    }
+  },
+  "media": {
+    "images": [
+      {
+        "url": "https://images.unsplash.com/photo-1769026171169-5082438aadf5?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2OTF8MHwxfHNlYXJjaHwyfHxkYXJrJTIwcmVkJTIwYWJzdHJhY3QlMjB0ZXh0dXJlfGVufDB8fHx8MTc3NDcwMjMyOXww&ixlib=rb-4.1.0&q=85",
+        "category": "background",
+        "description": "Subtle dark red abstract texture for login background accents"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1547619292-870fe4aeadb8?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA2ODl8MHwxfHNlYXJjaHw0fHx1c2VyJTIwcHJvZmlsZSUyMHBvcnRyYWl0JTIwZGFya3xlbnwwfHx8fDE3NzQ3MDIzMjl8MA&ixlib=rb-4.1.0&q=85",
+        "category": "avatar",
+        "description": "User avatar 1"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1565023629598-385c80373b3e?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA2ODl8MHwxfHNlYXJjaHwyfHx1c2VyJTIwcHJvZmlsZSUyMHBvcnRyYWl0JTIwZGFya3xlbnwwfHx8fDE3NzQ3MDIzMjl8MA&ixlib=rb-4.1.0&q=85",
+        "category": "avatar",
+        "description": "User avatar 2"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1739296408127-b6cc9c5c094b?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA2ODl8MHwxfHNlYXJjaHwzfHx1c2VyJTIwcHJvZmlsZSUyMHBvcnRyYWl0JTIwZGFya3xlbnwwfHx8fDE3NzQ3MDIzMjl8MA&ixlib=rb-4.1.0&q=85",
+        "category": "avatar",
+        "description": "User avatar 3"
+      }
+    ]
+  },
+  "specific_instructions_for_main_agent": [
+    "The entire application MUST be configured for Right-to-Left (RTL) reading. Add `dir=\"rtl\"` to the main application wrapper or body.",
+    "The layout must be split: Friends Sidebar on the right, Chat Area on the left. In an RTL layout using flexbox, this happens naturally if they are in normal DOM order, but verify the visual result matches 'Chat Area on left, Friends Panel on right'.",
+    "Login Page Requirements: Center the login card. Include fields for Username, Email (for register mode), and Password. Explicitly place the 'Don't have an account?' link directly below the password input field.",
+    "Adding friends MUST be implemented via an input field in the friends panel that requires typing '@' before the username to search/add.",
+    "Maintain strict minimalism: Use deep black (#050505) for backgrounds, dark gray (#0A0A0A/#121212) for panels, and deep red (#DC2626) exclusively for primary actions and accents.",
+    "Ensure all interactive elements have a `data-testid` attribute for testing (e.g., `data-testid=\"login-button\"`, `data-testid=\"message-input\"`).",
+    "Load 'Cairo' and 'Tajawal' from Google Fonts and apply 'Cairo' to headings and 'Tajawal' to body text."
+  ]
+}
