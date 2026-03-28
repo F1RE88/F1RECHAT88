@@ -3,8 +3,9 @@ import { useAuth } from "@/contexts/AuthContext";
 import FriendsSidebar from "@/components/FriendsSidebar";
 import ChatArea from "@/components/ChatArea";
 import AdminPanel from "@/components/AdminPanel";
+import CreateGroupModal from "@/components/CreateGroupModal";
 import axios from "axios";
-import { Menu, X, Shield } from "lucide-react";
+import { Menu, X } from "lucide-react";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -12,71 +13,100 @@ export default function DashboardPage() {
   const { user, logout } = useAuth();
   const [friends, setFriends] = useState([]);
   const [selectedFriend, setSelectedFriend] = useState(null);
+  const [selectedGroup, setSelectedGroup] = useState(null);
   const [friendRequests, setFriendRequests] = useState([]);
   const [showSidebar, setShowSidebar] = useState(true);
   const [messages, setMessages] = useState([]);
+  const [groupMessages, setGroupMessages] = useState([]);
+  const [groups, setGroups] = useState([]);
   const [showAdmin, setShowAdmin] = useState(false);
+  const [showCreateGroup, setShowCreateGroup] = useState(false);
 
   const fetchFriends = useCallback(async () => {
     try {
       const { data } = await axios.get(`${API}/friends`, { withCredentials: true });
       setFriends(data);
-    } catch {
-      // ignore
-    }
+    } catch {}
   }, []);
 
   const fetchFriendRequests = useCallback(async () => {
     try {
       const { data } = await axios.get(`${API}/friends/requests`, { withCredentials: true });
       setFriendRequests(data);
-    } catch {
-      // ignore
-    }
+    } catch {}
   }, []);
 
   const fetchMessages = useCallback(async (friendId) => {
     try {
       const { data } = await axios.get(`${API}/messages/${friendId}`, { withCredentials: true });
       setMessages(data);
-    } catch {
-      // ignore
-    }
+    } catch {}
+  }, []);
+
+  const fetchGroups = useCallback(async () => {
+    try {
+      const { data } = await axios.get(`${API}/groups`, { withCredentials: true });
+      setGroups(data);
+    } catch {}
+  }, []);
+
+  const fetchGroupMessages = useCallback(async (groupId) => {
+    try {
+      const { data } = await axios.get(`${API}/groups/${groupId}/messages`, { withCredentials: true });
+      setGroupMessages(data);
+    } catch {}
   }, []);
 
   useEffect(() => {
     fetchFriends();
     fetchFriendRequests();
+    fetchGroups();
     const interval = setInterval(() => {
       fetchFriends();
       fetchFriendRequests();
+      fetchGroups();
       if (selectedFriend) fetchMessages(selectedFriend.id);
+      if (selectedGroup) fetchGroupMessages(selectedGroup.id);
     }, 5000);
     return () => clearInterval(interval);
-  }, [fetchFriends, fetchFriendRequests, fetchMessages, selectedFriend]);
+  }, [fetchFriends, fetchFriendRequests, fetchMessages, fetchGroups, fetchGroupMessages, selectedFriend, selectedGroup]);
 
   useEffect(() => {
-    if (selectedFriend) {
-      fetchMessages(selectedFriend.id);
-    }
+    if (selectedFriend) fetchMessages(selectedFriend.id);
   }, [selectedFriend, fetchMessages]);
+
+  useEffect(() => {
+    if (selectedGroup) fetchGroupMessages(selectedGroup.id);
+  }, [selectedGroup, fetchGroupMessages]);
 
   const handleSelectFriend = (friend) => {
     setSelectedFriend(friend);
+    setSelectedGroup(null);
+    setGroupMessages([]);
+    setShowSidebar(false);
+  };
+
+  const handleSelectGroup = (group) => {
+    setSelectedGroup(group);
+    setSelectedFriend(null);
+    setMessages([]);
     setShowSidebar(false);
   };
 
   const handleSendMessage = async (content) => {
     if (!selectedFriend || !content.trim()) return;
     try {
-      await axios.post(`${API}/messages`, {
-        receiver_id: selectedFriend.id,
-        content: content.trim()
-      }, { withCredentials: true });
+      await axios.post(`${API}/messages`, { receiver_id: selectedFriend.id, content: content.trim() }, { withCredentials: true });
       fetchMessages(selectedFriend.id);
-    } catch {
-      // ignore
-    }
+    } catch {}
+  };
+
+  const handleSendGroupMessage = async (content) => {
+    if (!selectedGroup || !content.trim()) return;
+    try {
+      await axios.post(`${API}/groups/${selectedGroup.id}/messages`, { content: content.trim() }, { withCredentials: true });
+      fetchGroupMessages(selectedGroup.id);
+    } catch {}
   };
 
   const handleAcceptRequest = async (username) => {
@@ -84,18 +114,14 @@ export default function DashboardPage() {
       await axios.post(`${API}/friends/accept`, { username }, { withCredentials: true });
       fetchFriends();
       fetchFriendRequests();
-    } catch {
-      // ignore
-    }
+    } catch {}
   };
 
   const handleRejectRequest = async (username) => {
     try {
       await axios.post(`${API}/friends/reject`, { username }, { withCredentials: true });
       fetchFriendRequests();
-    } catch {
-      // ignore
-    }
+    } catch {}
   };
 
   const handleSendFriendRequest = async (username) => {
@@ -105,6 +131,18 @@ export default function DashboardPage() {
     } catch (e) {
       const detail = e.response?.data?.detail;
       return { success: false, error: typeof detail === "string" ? detail : "Failed to send request" };
+    }
+  };
+
+  const handleCreateGroup = async (name, memberIds) => {
+    try {
+      await axios.post(`${API}/groups`, { name, member_ids: memberIds }, { withCredentials: true });
+      setShowCreateGroup(false);
+      fetchGroups();
+      return { success: true };
+    } catch (e) {
+      const detail = e.response?.data?.detail;
+      return { success: false, error: typeof detail === "string" ? detail : "Failed to create group" };
     }
   };
 
@@ -122,30 +160,46 @@ export default function DashboardPage() {
       {/* Chat Area */}
       <ChatArea
         selectedFriend={selectedFriend}
+        selectedGroup={selectedGroup}
         messages={messages}
+        groupMessages={groupMessages}
         onSendMessage={handleSendMessage}
+        onSendGroupMessage={handleSendGroupMessage}
         currentUser={user}
         onLogout={logout}
-        onBack={() => { setSelectedFriend(null); setShowSidebar(true); }}
+        onBack={() => { setSelectedFriend(null); setSelectedGroup(null); setShowSidebar(true); }}
         onOpenAdmin={() => setShowAdmin(true)}
       />
 
-      {/* Friends Sidebar */}
+      {/* Friends/Groups Sidebar */}
       <div className={`${showSidebar ? 'flex' : 'hidden'} md:flex w-full md:w-80 lg:w-96 flex-shrink-0 border-l border-neutral-800 bg-[#0A0A0A] flex-col absolute md:relative inset-0 z-40 md:z-auto`}>
         <FriendsSidebar
           friends={friends}
           friendRequests={friendRequests}
           selectedFriend={selectedFriend}
+          selectedGroup={selectedGroup}
+          groups={groups}
           onSelectFriend={handleSelectFriend}
+          onSelectGroup={handleSelectGroup}
           onAcceptRequest={handleAcceptRequest}
           onRejectRequest={handleRejectRequest}
           onSendFriendRequest={handleSendFriendRequest}
+          onCreateGroup={() => setShowCreateGroup(true)}
           currentUser={user}
         />
       </div>
 
-      {/* Admin Panel Modal */}
+      {/* Admin Panel */}
       {showAdmin && <AdminPanel onClose={() => setShowAdmin(false)} />}
+
+      {/* Create Group Modal */}
+      {showCreateGroup && (
+        <CreateGroupModal
+          friends={friends}
+          onClose={() => setShowCreateGroup(false)}
+          onCreate={handleCreateGroup}
+        />
+      )}
     </div>
   );
 }

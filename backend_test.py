@@ -329,6 +329,205 @@ class F1RECHATTester:
             print("❌ Failed to get admin users list")
             return False
 
+    def test_existing_users_groups(self):
+        """Test group functionality with existing test users"""
+        print(f"\n👥 Testing Group Functionality with Existing Users")
+        
+        # Login as existing test users
+        user_a_token, user_a_id = self.test_login("usera140401", "test123456")
+        user_b_token, user_b_id = self.test_login("userb140401", "test123456")
+        
+        if not user_a_token or not user_b_token:
+            print("❌ Failed to login existing test users")
+            return False
+        
+        print(f"✅ Logged in as usera140401 (ID: {user_a_id}) and userb140401 (ID: {user_b_id})")
+        
+        # Test 1: Create a group
+        group_name = f"Test Group {datetime.now().strftime('%H%M%S')}"
+        success, group_response = self.run_test(
+            "Create group",
+            "POST",
+            "groups",
+            200,
+            data={"name": group_name, "member_ids": [user_b_id]},
+            headers={"Authorization": f"Bearer {user_a_token}"}
+        )
+        
+        if not success:
+            print("❌ Failed to create group")
+            return False
+        
+        group_id = group_response.get('id')
+        if not group_id:
+            print("❌ No group ID returned")
+            return False
+        
+        print(f"✅ Group created with ID: {group_id}")
+        
+        # Test 2: List groups for user A
+        success, groups = self.run_test(
+            "List groups for user A",
+            "GET",
+            "groups",
+            200,
+            headers={"Authorization": f"Bearer {user_a_token}"}
+        )
+        
+        if not success or not isinstance(groups, list):
+            print("❌ Failed to list groups")
+            return False
+        
+        # Find our created group
+        created_group = None
+        for group in groups:
+            if group.get('id') == group_id:
+                created_group = group
+                break
+        
+        if not created_group:
+            print("❌ Created group not found in groups list")
+            return False
+        
+        print(f"✅ Group found in list: {created_group.get('name')}")
+        
+        # Test 3: Get group details
+        success, group_details = self.run_test(
+            "Get group details",
+            "GET",
+            f"groups/{group_id}",
+            200,
+            headers={"Authorization": f"Bearer {user_a_token}"}
+        )
+        
+        if not success:
+            print("❌ Failed to get group details")
+            return False
+        
+        members = group_details.get('members', [])
+        if len(members) != 2:  # Creator + 1 member
+            print(f"❌ Expected 2 members, got {len(members)}")
+            return False
+        
+        print(f"✅ Group details retrieved with {len(members)} members")
+        
+        # Test 4: Send group message
+        message_content = f"Hello group! From usera140401 at {datetime.now().strftime('%H:%M:%S')}"
+        success, message_response = self.run_test(
+            "Send group message",
+            "POST",
+            f"groups/{group_id}/messages",
+            200,
+            data={"content": message_content},
+            headers={"Authorization": f"Bearer {user_a_token}"}
+        )
+        
+        if not success:
+            print("❌ Failed to send group message")
+            return False
+        
+        print("✅ Group message sent successfully")
+        
+        # Test 5: Get group messages
+        success, messages = self.run_test(
+            "Get group messages",
+            "GET",
+            f"groups/{group_id}/messages",
+            200,
+            headers={"Authorization": f"Bearer {user_a_token}"}
+        )
+        
+        if not success or not isinstance(messages, list):
+            print("❌ Failed to get group messages")
+            return False
+        
+        # Find our message
+        sent_message = None
+        for msg in messages:
+            if msg.get('content') == message_content:
+                sent_message = msg
+                break
+        
+        if not sent_message:
+            print("❌ Sent group message not found")
+            return False
+        
+        if sent_message.get('sender_id') != user_a_id:
+            print(f"❌ Group message sender_id mismatch: {sent_message.get('sender_id')} != {user_a_id}")
+            return False
+        
+        print("✅ Group message retrieved correctly")
+        
+        # Test 6: User B can also access the group
+        success, user_b_groups = self.run_test(
+            "List groups for user B",
+            "GET",
+            "groups",
+            200,
+            headers={"Authorization": f"Bearer {user_b_token}"}
+        )
+        
+        if not success:
+            print("❌ User B failed to list groups")
+            return False
+        
+        # Check if user B can see the group
+        user_b_has_group = any(g.get('id') == group_id for g in user_b_groups)
+        if not user_b_has_group:
+            print("❌ User B cannot see the group they're a member of")
+            return False
+        
+        print("✅ User B can see the group")
+        
+        # Test 7: User B sends a message to the group
+        user_b_message = f"Hello from userb140401 at {datetime.now().strftime('%H:%M:%S')}"
+        success, _ = self.run_test(
+            "User B sends group message",
+            "POST",
+            f"groups/{group_id}/messages",
+            200,
+            data={"content": user_b_message},
+            headers={"Authorization": f"Bearer {user_b_token}"}
+        )
+        
+        if not success:
+            print("❌ User B failed to send group message")
+            return False
+        
+        print("✅ User B sent group message successfully")
+        
+        # Test 8: Delete group (only creator can do this)
+        success, _ = self.run_test(
+            "Delete group (as creator)",
+            "DELETE",
+            f"groups/{group_id}",
+            200,
+            headers={"Authorization": f"Bearer {user_a_token}"}
+        )
+        
+        if not success:
+            print("❌ Failed to delete group")
+            return False
+        
+        print("✅ Group deleted successfully")
+        
+        # Test 9: Verify group is deleted
+        success, _ = self.run_test(
+            "Try to access deleted group",
+            "GET",
+            f"groups/{group_id}",
+            404,
+            headers={"Authorization": f"Bearer {user_a_token}"}
+        )
+        
+        if not success:
+            print("❌ Deleted group still accessible")
+            return False
+        
+        print("✅ Deleted group properly inaccessible")
+        
+        return True
+
     def test_existing_admin_login(self):
         """Test login with existing admin credentials"""
         print(f"\n👤 Testing Existing Admin Login")
@@ -342,7 +541,7 @@ class F1RECHATTester:
             return False
 
 def main():
-    print("🚀 Starting F1RECHAT Backend Testing (Iteration 3)")
+    print("🚀 Starting F1RECHAT Backend Testing (Iteration 4 - Group Chat)")
     print("=" * 60)
     
     tester = F1RECHATTester()
@@ -364,6 +563,10 @@ def main():
     
     # Test admin functionality
     tester.test_admin_functionality()
+    
+    # NEW: Test group functionality with existing users
+    if not tester.test_existing_users_groups():
+        print("\n❌ Group functionality tests failed!")
     
     # Print final results
     print("\n" + "=" * 60)

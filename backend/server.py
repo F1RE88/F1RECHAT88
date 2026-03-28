@@ -18,7 +18,7 @@ import secrets
 import requests as http_requests
 from datetime import datetime, timezone, timedelta
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 
 # MongoDB connection
 mongo_url = os.environ['MONGO_URL']
@@ -142,6 +142,19 @@ class AdminChangeUsernameInput(BaseModel):
 
 class ChatBackgroundInput(BaseModel):
     background: str  # color code or "default"
+
+class CreateGroupInput(BaseModel):
+    name: str
+    member_ids: List[str]  # list of friend user IDs
+
+class GroupMessageInput(BaseModel):
+    content: str
+
+class AddGroupMemberInput(BaseModel):
+    user_id: str
+
+class UpdateGroupInput(BaseModel):
+    name: Optional[str] = None
 
 # --- Registration Step 1: Email Verification ---
 @api_router.post("/auth/verify-email")
@@ -595,6 +608,190 @@ async def get_chat_background(request: Request):
     user = await get_current_user(request)
     user_doc = await db.users.find_one({"_id": ObjectId(user["id"])}, {"chat_background": 1, "_id": 0})
     return {"background": user_doc.get("chat_background", "default") if user_doc else "default"}
+
+# --- Group Endpoints ---
+@api_router.post("/groups")
+async def create_group(input_data: CreateGroupInput, request: Request):
+    user = await get_current_user(request)
+    name = input_data.name.strip()
+    if len(name) < 1:
+        raise HTTPException(status_code=400, detail="Group name is required")
+
+    # Validate all members are friends
+    user_friends = user.get("friends", [])
+    for mid in input_data.member_ids:
+        if mid not in user_friends:
+            raise HTTPException(status_code=400, detail=f"User {mid} is not your friend")
+
+    # Always include the creator
+    all_members = list(set([user["id"]] + input_data.member_ids))
+
+    # Get member usernames
+    member_details = []
+    for mid in all_members:
+        u = await db.users.find_one({"_id": ObjectId(mid)}, {"username": 1, "profile_image": 1})
+        if u:
+            member_details.append({"id": str(u["_id"]), "username": u["username"], "profile_image": u.get("profile_image")})
+
+    group_doc = {
+        "name": name,
+        "created_by": user["id"],
+        "created_by_username": user["username"],
+        "members": all_members,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    result = await db.groups.insert_one(group_doc)
+    group_id = str(result.inserted_id)
+
+    return {
+        "id": group_id,
+        "name": name,
+        "created_by": user["id"],
+        "members": member_details,
+        "created_at": group_doc["created_at"]
+    }
+
+@api_router.get("/groups")
+async def get_groups(request: Request):
+    user = await get_current_user(request)
+    groups = await db.groups.find({"members": user["id"]}).to_list(100)
+    result = []
+    for g in groups:
+        g_id = str(g["_id"])
+        # Get last message
+        last_msg = await db.group_messages.find({"group_id": g_id}, {"_id": 0}).sort("created_at", -1).to_list(1)
+        result.append({
+            "id": g_id,
+            "name": g["name"],
+            "created_by": g["created_by"],
+            "member_count": len(g["members"]),
+            "created_at": g["created_at"],
+            "last_message": last_msg[0] if last_msg else None
+        })
+    return result
+
+@api_router.get("/groups/{group_id}")
+async def get_group(group_id: str, request: Request):
+    user = await get_current_user(request)
+    group = await db.groups.find_one({"_id": ObjectId(group_id)})
+    if not group:
+        raise HTTPException(status_code=404, detail="Group not found")
+    if user["id"] not in group["members"]:
+        raise HTTPException(status_code=403, detail="Not a member of this group")
+
+    # Get member details
+    member_details = []
+    for mid in group["members"]:
+        u = await db.users.find_one({"_id": ObjectId(mid)}, {"username": 1, "profile_image": 1})
+        if u:
+            member_details.append({"id": str(u["_id"]), "username": u["username"], "profile_image": u.get("profile_image")})
+
+    return {
+        "id": str(group["_id"]),
+        "name": group["name"],
+        "created_by": group["created_by"],
+        "members": member_details,
+        "created_at": group["created_at"]
+    }
+
+@api_router.post("/groups/{group_id}/members")
+async def add_group_member(group_id: str, input_data: AddGroupMemberInput, request: Request):
+    user = await get_current_user(request)
+    group = await db.groups.find_one({"_id": ObjectId(group_id)})
+    if not group:
+        raise HTTPException(status_code=404, detail="Group not found")
+    if user["id"] not in group["members"]:
+        raise HTTPException(status_code=403, detail="Not a member of this group")
+
+    new_id = input_data.user_id
+    # Must be your friend
+    if new_id not in user.get("friends", []):
+        raise HTTPException(status_code=400, detail="Can only add friends to groups")
+    if new_id in group["members"]:
+        raise HTTPException(status_code=400, detail="Already a member")
+
+    await db.groups.update_one({"_id": ObjectId(group_id)}, {"$addToSet": {"members": new_id}})
+    target_user = await db.users.find_one({"_id": ObjectId(new_id)}, {"username": 1})
+    return {"message": f"@{target_user['username']} added to the group"}
+
+@api_router.delete("/groups/{group_id}/members/{user_id}")
+async def remove_group_member(group_id: str, user_id: str, request: Request):
+    user = await get_current_user(request)
+    group = await db.groups.find_one({"_id": ObjectId(group_id)})
+    if not group:
+        raise HTTPException(status_code=404, detail="Group not found")
+    if user["id"] != group["created_by"] and user["id"] != user_id:
+        raise HTTPException(status_code=403, detail="Only the creator can remove members")
+    if user_id == group["created_by"]:
+        raise HTTPException(status_code=400, detail="Creator cannot be removed")
+    if user_id not in group["members"]:
+        raise HTTPException(status_code=400, detail="Not a member")
+
+    await db.groups.update_one({"_id": ObjectId(group_id)}, {"$pull": {"members": user_id}})
+    return {"message": "Member removed"}
+
+@api_router.put("/groups/{group_id}")
+async def update_group(group_id: str, input_data: UpdateGroupInput, request: Request):
+    user = await get_current_user(request)
+    group = await db.groups.find_one({"_id": ObjectId(group_id)})
+    if not group:
+        raise HTTPException(status_code=404, detail="Group not found")
+    if user["id"] != group["created_by"]:
+        raise HTTPException(status_code=403, detail="Only the creator can update the group")
+
+    updates = {}
+    if input_data.name:
+        updates["name"] = input_data.name.strip()
+    if updates:
+        await db.groups.update_one({"_id": ObjectId(group_id)}, {"$set": updates})
+    return {"message": "Group updated"}
+
+@api_router.delete("/groups/{group_id}")
+async def delete_group(group_id: str, request: Request):
+    user = await get_current_user(request)
+    group = await db.groups.find_one({"_id": ObjectId(group_id)})
+    if not group:
+        raise HTTPException(status_code=404, detail="Group not found")
+    if user["id"] != group["created_by"]:
+        raise HTTPException(status_code=403, detail="Only the creator can delete the group")
+
+    await db.groups.delete_one({"_id": ObjectId(group_id)})
+    await db.group_messages.delete_many({"group_id": group_id})
+    return {"message": "Group deleted"}
+
+@api_router.post("/groups/{group_id}/messages")
+async def send_group_message(group_id: str, input_data: GroupMessageInput, request: Request):
+    user = await get_current_user(request)
+    group = await db.groups.find_one({"_id": ObjectId(group_id)})
+    if not group:
+        raise HTTPException(status_code=404, detail="Group not found")
+    if user["id"] not in group["members"]:
+        raise HTTPException(status_code=403, detail="Not a member of this group")
+
+    msg_doc = {
+        "group_id": group_id,
+        "sender_id": user["id"],
+        "sender_username": user["username"],
+        "content": input_data.content,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.group_messages.insert_one(msg_doc)
+    msg_doc.pop("_id", None)
+    return msg_doc
+
+@api_router.get("/groups/{group_id}/messages")
+async def get_group_messages(group_id: str, request: Request):
+    user = await get_current_user(request)
+    group = await db.groups.find_one({"_id": ObjectId(group_id)})
+    if not group:
+        raise HTTPException(status_code=404, detail="Group not found")
+    if user["id"] not in group["members"]:
+        raise HTTPException(status_code=403, detail="Not a member of this group")
+
+    messages = await db.group_messages.find(
+        {"group_id": group_id}, {"_id": 0}
+    ).sort("created_at", 1).to_list(200)
+    return messages
 
 # --- Startup ---
 @app.on_event("startup")
