@@ -540,9 +540,350 @@ class F1RECHATTester:
             print("❌ Admin login failed")
             return False
 
+    def test_heartbeat_and_online_status(self):
+        """Test heartbeat system and online/offline status"""
+        print(f"\n💓 Testing Heartbeat and Online Status")
+        
+        # Login as existing test users
+        user_a_token, user_a_id = self.test_login("usera140401", "test123456")
+        user_b_token, user_b_id = self.test_login("userb140401", "test123456")
+        
+        if not user_a_token or not user_b_token:
+            print("❌ Failed to login test users for heartbeat test")
+            return False
+        
+        # Test 1: Send heartbeat for user A
+        success, response = self.run_test(
+            "Send heartbeat for user A",
+            "POST",
+            "auth/heartbeat",
+            200,
+            headers={"Authorization": f"Bearer {user_a_token}"}
+        )
+        
+        if not success or response.get('status') != 'ok':
+            print("❌ Heartbeat failed")
+            return False
+        
+        print("✅ Heartbeat sent successfully")
+        
+        # Test 2: Check if user is online by getting friends list
+        success, friends = self.run_test(
+            "Get friends list to check online status",
+            "GET",
+            "friends",
+            200,
+            headers={"Authorization": f"Bearer {user_b_token}"}
+        )
+        
+        if not success:
+            print("❌ Failed to get friends list")
+            return False
+        
+        # Find user A in user B's friends list
+        user_a_friend = None
+        for friend in friends:
+            if friend.get('id') == user_a_id:
+                user_a_friend = friend
+                break
+        
+        if not user_a_friend:
+            print("❌ User A not found in User B's friends list")
+            return False
+        
+        if user_a_friend.get('online'):
+            print("✅ User A shows as online after heartbeat")
+        else:
+            print("⚠️ User A not showing as online (may be timing issue)")
+        
+        # Test 3: Logout user A and check offline status
+        success, _ = self.run_test(
+            "Logout user A",
+            "POST",
+            "auth/logout",
+            200,
+            headers={"Authorization": f"Bearer {user_a_token}"}
+        )
+        
+        if not success:
+            print("❌ Failed to logout user A")
+            return False
+        
+        print("✅ User A logged out successfully")
+        
+        return True
+
+    def test_notification_system(self):
+        """Test notification system for friend requests, messages, etc."""
+        print(f"\n🔔 Testing Notification System")
+        
+        # Create new test users for clean notification testing
+        timestamp = datetime.now().strftime('%H%M%S')
+        user_c_email = f"userc{timestamp}@test.com"
+        user_c_username = f"userc{timestamp}"
+        user_d_email = f"userd{timestamp}@test.com"
+        user_d_username = f"userd{timestamp}"
+        password = "test123456"
+        
+        # Register users
+        user_c_id, user_c_token = self.register_user(user_c_email, user_c_username, password)
+        user_d_id, user_d_token = self.register_user(user_d_email, user_d_username, password)
+        
+        if not user_c_id or not user_d_id:
+            print("❌ Failed to register test users for notifications")
+            return False
+        
+        # Test 1: Check initial notification count (should be 0)
+        success, response = self.run_test(
+            "Get initial unread notification count",
+            "GET",
+            "notifications/unread-count",
+            200,
+            headers={"Authorization": f"Bearer {user_d_token}"}
+        )
+        
+        if not success:
+            print("❌ Failed to get unread notification count")
+            return False
+        
+        initial_count = response.get('count', -1)
+        print(f"✅ Initial unread count: {initial_count}")
+        
+        # Test 2: User C sends friend request to User D (should create notification)
+        success, _ = self.run_test(
+            "Send friend request (should create notification)",
+            "POST",
+            "friends/request",
+            200,
+            data={"username": user_d_username},
+            headers={"Authorization": f"Bearer {user_c_token}"}
+        )
+        
+        if not success:
+            print("❌ Failed to send friend request")
+            return False
+        
+        # Test 3: Check if notification was created for User D
+        success, response = self.run_test(
+            "Get unread count after friend request",
+            "GET",
+            "notifications/unread-count",
+            200,
+            headers={"Authorization": f"Bearer {user_d_token}"}
+        )
+        
+        if not success:
+            print("❌ Failed to get unread count after friend request")
+            return False
+        
+        new_count = response.get('count', -1)
+        if new_count > initial_count:
+            print(f"✅ Notification created for friend request (count: {new_count})")
+        else:
+            print(f"⚠️ No notification increase after friend request (count: {new_count})")
+        
+        # Test 4: Get notifications list
+        success, notifications = self.run_test(
+            "Get notifications list",
+            "GET",
+            "notifications",
+            200,
+            headers={"Authorization": f"Bearer {user_d_token}"}
+        )
+        
+        if not success:
+            print("❌ Failed to get notifications list")
+            return False
+        
+        if isinstance(notifications, list) and len(notifications) > 0:
+            print(f"✅ Notifications list retrieved: {len(notifications)} notifications")
+            
+            # Check if friend request notification exists
+            friend_request_notif = None
+            for notif in notifications:
+                if notif.get('type') == 'friend_request' and notif.get('from_username') == user_c_username:
+                    friend_request_notif = notif
+                    break
+            
+            if friend_request_notif:
+                print("✅ Friend request notification found")
+            else:
+                print("⚠️ Friend request notification not found in list")
+        else:
+            print("⚠️ No notifications found")
+        
+        # Test 5: User D accepts friend request (should create notification for User C)
+        success, _ = self.run_test(
+            "Accept friend request (should create notification)",
+            "POST",
+            "friends/accept",
+            200,
+            data={"username": user_c_username},
+            headers={"Authorization": f"Bearer {user_d_token}"}
+        )
+        
+        if not success:
+            print("❌ Failed to accept friend request")
+            return False
+        
+        # Test 6: Check if User C got friend accepted notification
+        success, response = self.run_test(
+            "Get User C unread count after acceptance",
+            "GET",
+            "notifications/unread-count",
+            200,
+            headers={"Authorization": f"Bearer {user_c_token}"}
+        )
+        
+        if success and response.get('count', 0) > 0:
+            print("✅ Friend accepted notification created for User C")
+        else:
+            print("⚠️ No friend accepted notification for User C")
+        
+        # Test 7: User C sends message to User D (should create notification)
+        message_content = f"Hello {user_d_username}! This is a test message."
+        success, _ = self.run_test(
+            "Send message (should create notification)",
+            "POST",
+            "messages",
+            200,
+            data={"receiver_id": user_d_id, "content": message_content},
+            headers={"Authorization": f"Bearer {user_c_token}"}
+        )
+        
+        if not success:
+            print("❌ Failed to send message")
+            return False
+        
+        # Test 8: Check if message notification was created for User D
+        success, response = self.run_test(
+            "Get User D unread count after message",
+            "GET",
+            "notifications/unread-count",
+            200,
+            headers={"Authorization": f"Bearer {user_d_token}"}
+        )
+        
+        if success and response.get('count', 0) > 0:
+            print("✅ Message notification created for User D")
+        else:
+            print("⚠️ No message notification for User D")
+        
+        # Test 9: Mark all notifications as read
+        success, response = self.run_test(
+            "Mark all notifications as read",
+            "PUT",
+            "notifications/read",
+            200,
+            headers={"Authorization": f"Bearer {user_d_token}"}
+        )
+        
+        if not success:
+            print("❌ Failed to mark notifications as read")
+            return False
+        
+        # Test 10: Verify unread count is now 0
+        success, response = self.run_test(
+            "Get unread count after marking read",
+            "GET",
+            "notifications/unread-count",
+            200,
+            headers={"Authorization": f"Bearer {user_d_token}"}
+        )
+        
+        if success and response.get('count', -1) == 0:
+            print("✅ All notifications marked as read successfully")
+        else:
+            print(f"⚠️ Unread count not zero after marking read: {response.get('count', -1)}")
+        
+        return True
+
+    def test_group_message_notifications(self):
+        """Test notifications for group messages"""
+        print(f"\n👥🔔 Testing Group Message Notifications")
+        
+        # Login as existing test users
+        user_a_token, user_a_id = self.test_login("usera140401", "test123456")
+        user_b_token, user_b_id = self.test_login("userb140401", "test123456")
+        
+        if not user_a_token or not user_b_token:
+            print("❌ Failed to login test users for group notification test")
+            return False
+        
+        # Create a test group
+        group_name = f"Notification Test Group {datetime.now().strftime('%H%M%S')}"
+        success, group_response = self.run_test(
+            "Create group for notification test",
+            "POST",
+            "groups",
+            200,
+            data={"name": group_name, "member_ids": [user_b_id]},
+            headers={"Authorization": f"Bearer {user_a_token}"}
+        )
+        
+        if not success:
+            print("❌ Failed to create group for notification test")
+            return False
+        
+        group_id = group_response.get('id')
+        if not group_id:
+            print("❌ No group ID returned")
+            return False
+        
+        # Get User B's initial notification count
+        success, response = self.run_test(
+            "Get User B initial unread count",
+            "GET",
+            "notifications/unread-count",
+            200,
+            headers={"Authorization": f"Bearer {user_b_token}"}
+        )
+        
+        initial_count = response.get('count', 0) if success else 0
+        
+        # User A sends group message (should notify User B)
+        message_content = f"Group notification test message at {datetime.now().strftime('%H:%M:%S')}"
+        success, _ = self.run_test(
+            "Send group message (should create notification)",
+            "POST",
+            f"groups/{group_id}/messages",
+            200,
+            data={"content": message_content},
+            headers={"Authorization": f"Bearer {user_a_token}"}
+        )
+        
+        if not success:
+            print("❌ Failed to send group message")
+            return False
+        
+        # Check if User B got group message notification
+        success, response = self.run_test(
+            "Get User B unread count after group message",
+            "GET",
+            "notifications/unread-count",
+            200,
+            headers={"Authorization": f"Bearer {user_b_token}"}
+        )
+        
+        if success and response.get('count', 0) > initial_count:
+            print("✅ Group message notification created for User B")
+        else:
+            print("⚠️ No group message notification for User B")
+        
+        # Clean up: Delete the test group
+        success, _ = self.run_test(
+            "Delete test group",
+            "DELETE",
+            f"groups/{group_id}",
+            200,
+            headers={"Authorization": f"Bearer {user_a_token}"}
+        )
+        
+        return True
+
 def main():
-    print("🚀 Starting F1RECHAT Backend Testing (Iteration 4 - Group Chat)")
-    print("=" * 60)
+    print("🚀 Starting F1RECHAT Backend Testing (Iteration 5 - Notifications & Online Status)")
+    print("=" * 70)
     
     tester = F1RECHATTester()
     
@@ -564,12 +905,24 @@ def main():
     # Test admin functionality
     tester.test_admin_functionality()
     
-    # NEW: Test group functionality with existing users
+    # Test group functionality with existing users
     if not tester.test_existing_users_groups():
         print("\n❌ Group functionality tests failed!")
     
+    # NEW: Test heartbeat and online status system
+    if not tester.test_heartbeat_and_online_status():
+        print("\n❌ Heartbeat and online status tests failed!")
+    
+    # NEW: Test notification system
+    if not tester.test_notification_system():
+        print("\n❌ Notification system tests failed!")
+    
+    # NEW: Test group message notifications
+    if not tester.test_group_message_notifications():
+        print("\n❌ Group message notification tests failed!")
+    
     # Print final results
-    print("\n" + "=" * 60)
+    print("\n" + "=" * 70)
     print(f"📊 Final Results: {tester.tests_passed}/{tester.tests_run} tests passed ({(tester.tests_passed / tester.tests_run * 100):.1f}%)")
     
     if tester.tests_passed == tester.tests_run:

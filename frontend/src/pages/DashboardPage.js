@@ -21,13 +21,41 @@ export default function DashboardPage() {
   const [groups, setGroups] = useState([]);
   const [showAdmin, setShowAdmin] = useState(false);
   const [showCreateGroup, setShowCreateGroup] = useState(false);
+  const [notifications, setNotifications] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  // --- Heartbeat (online/offline) ---
+  useEffect(() => {
+    const sendHeartbeat = async () => {
+      try {
+        await axios.post(`${API}/auth/heartbeat`, {}, { withCredentials: true });
+      } catch {}
+    };
+    sendHeartbeat(); // immediate
+    const interval = setInterval(sendHeartbeat, 30000); // every 30s
+    return () => clearInterval(interval);
+  }, []);
+
+  // --- Set offline on page unload ---
+  useEffect(() => {
+    const handleUnload = () => {
+      navigator.sendBeacon(`${API}/auth/logout`);
+    };
+    window.addEventListener("beforeunload", handleUnload);
+    return () => window.removeEventListener("beforeunload", handleUnload);
+  }, []);
 
   const fetchFriends = useCallback(async () => {
     try {
       const { data } = await axios.get(`${API}/friends`, { withCredentials: true });
       setFriends(data);
+      // Update selected friend's online status
+      if (selectedFriend) {
+        const updated = data.find(f => f.id === selectedFriend.id);
+        if (updated) setSelectedFriend(updated);
+      }
     } catch {}
-  }, []);
+  }, [selectedFriend]);
 
   const fetchFriendRequests = useCallback(async () => {
     try {
@@ -57,19 +85,32 @@ export default function DashboardPage() {
     } catch {}
   }, []);
 
+  const fetchNotifications = useCallback(async () => {
+    try {
+      const [notifResp, countResp] = await Promise.all([
+        axios.get(`${API}/notifications`, { withCredentials: true }),
+        axios.get(`${API}/notifications/unread-count`, { withCredentials: true })
+      ]);
+      setNotifications(notifResp.data);
+      setUnreadCount(countResp.data.count);
+    } catch {}
+  }, []);
+
   useEffect(() => {
     fetchFriends();
     fetchFriendRequests();
     fetchGroups();
+    fetchNotifications();
     const interval = setInterval(() => {
       fetchFriends();
       fetchFriendRequests();
       fetchGroups();
+      fetchNotifications();
       if (selectedFriend) fetchMessages(selectedFriend.id);
       if (selectedGroup) fetchGroupMessages(selectedGroup.id);
     }, 5000);
     return () => clearInterval(interval);
-  }, [fetchFriends, fetchFriendRequests, fetchMessages, fetchGroups, fetchGroupMessages, selectedFriend, selectedGroup]);
+  }, [fetchFriends, fetchFriendRequests, fetchMessages, fetchGroups, fetchGroupMessages, fetchNotifications, selectedFriend, selectedGroup]);
 
   useEffect(() => {
     if (selectedFriend) fetchMessages(selectedFriend.id);
@@ -146,6 +187,14 @@ export default function DashboardPage() {
     }
   };
 
+  const handleMarkNotificationsRead = async () => {
+    try {
+      await axios.put(`${API}/notifications/read`, {}, { withCredentials: true });
+      setUnreadCount(0);
+      setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+    } catch {}
+  };
+
   return (
     <div className="flex h-screen w-full overflow-hidden bg-[#050505] text-gray-100" data-testid="dashboard-page">
       {/* Mobile toggle */}
@@ -169,6 +218,9 @@ export default function DashboardPage() {
         onLogout={logout}
         onBack={() => { setSelectedFriend(null); setSelectedGroup(null); setShowSidebar(true); }}
         onOpenAdmin={() => setShowAdmin(true)}
+        notifications={notifications}
+        unreadCount={unreadCount}
+        onMarkNotificationsRead={handleMarkNotificationsRead}
       />
 
       {/* Friends/Groups Sidebar */}

@@ -156,6 +156,11 @@ class AddGroupMemberInput(BaseModel):
 class UpdateGroupInput(BaseModel):
     name: Optional[str] = None
 
+class NotificationReadInput(BaseModel):
+    notification_id: Optional[str] = None  # if None, mark all as read
+
+HEARTBEAT_TIMEOUT = 60  # seconds - user considered offline after this
+
 # --- Registration Step 1: Email Verification ---
 @api_router.post("/auth/verify-email")
 async def verify_email(input_data: EmailVerifyInput):
@@ -307,6 +312,9 @@ async def login(input_data: LoginInput, response: Response, request: Request):
     response.set_cookie(key="access_token", value=access_token, httponly=True, secure=False, samesite="lax", max_age=1800, path="/")
     response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=False, samesite="lax", max_age=604800, path="/")
 
+    # Set online
+    await db.users.update_one({"_id": user["_id"]}, {"$set": {"online": True, "last_seen": datetime.now(timezone.utc).isoformat()}})
+
     return {
         "id": user_id,
         "username": user["username"],
@@ -322,8 +330,45 @@ async def _record_failed_attempt(identifier: str):
         upsert=True
     )
 
+async def _create_notification(user_id: str, notif_type: str, message: str, from_user: str = "", from_username: str = "", group_id: str = "", group_name: str = ""):
+    doc = {
+        "user_id": user_id,
+        "type": notif_type,
+        "message": message,
+        "from_user": from_user,
+        "from_username": from_username,
+        "group_id": group_id,
+        "group_name": group_name,
+        "read": False,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    await db.notifications.insert_one(doc)
+
+# --- Online/Offline ---
+@api_router.post("/auth/heartbeat")
+async def heartbeat(request: Request):
+    user = await get_current_user(request)
+    now = datetime.now(timezone.utc).isoformat()
+    await db.users.update_one(
+        {"_id": ObjectId(user["id"])},
+        {"$set": {"online": True, "last_seen": now}}
+    )
+    # Mark stale users as offline (no heartbeat for 60s)
+    cutoff = (datetime.now(timezone.utc) - timedelta(seconds=HEARTBEAT_TIMEOUT)).isoformat()
+    await db.users.update_many(
+        {"last_seen": {"$lt": cutoff}, "online": True, "_id": {"$ne": ObjectId(user["id"])}},
+        {"$set": {"online": False}}
+    )
+    return {"status": "ok"}
+
 @api_router.post("/auth/logout")
-async def logout(response: Response):
+async def logout(request: Request, response: Response):
+    # Set offline
+    try:
+        user = await get_current_user(request)
+        await db.users.update_one({"_id": ObjectId(user["id"])}, {"$set": {"online": False, "last_seen": datetime.now(timezone.utc).isoformat()}})
+    except Exception:
+        pass
     response.delete_cookie("access_token", path="/")
     response.delete_cookie("refresh_token", path="/")
     return {"message": "Logged out"}
@@ -464,6 +509,8 @@ async def send_friend_request(input_data: FriendRequestInput, request: Request):
         "status": "pending",
         "created_at": datetime.now(timezone.utc).isoformat()
     })
+    # Notify target
+    await _create_notification(target_id, "friend_request", f"@{user['username']} sent you a friend request", from_user=user["id"], from_username=user["username"])
     return {"message": f"Friend request sent to @{target_username}"}
 
 @api_router.get("/friends/requests")
@@ -512,6 +559,8 @@ async def accept_friend_request(input_data: FriendRequestInput, request: Request
     await db.users.update_one({"_id": ObjectId(user["id"])}, {"$addToSet": {"friends": from_id}})
     await db.users.update_one({"_id": ObjectId(from_id)}, {"$addToSet": {"friends": user["id"]}})
     await db.friend_requests.update_one({"_id": req["_id"]}, {"$set": {"status": "accepted"}})
+    # Notify the requester
+    await _create_notification(from_id, "friend_accepted", f"@{user['username']} accepted your friend request", from_user=user["id"], from_username=user["username"])
     return {"message": f"You are now friends with @{from_username}"}
 
 @api_router.post("/friends/reject")
@@ -579,6 +628,8 @@ async def send_message(input_data: MessageInput, request: Request):
     }
     await db.messages.insert_one(msg_doc)
     msg_doc.pop("_id", None)
+    # Notify receiver
+    await _create_notification(input_data.receiver_id, "new_message", f"@{user['username']}: {input_data.content[:50]}", from_user=user["id"], from_username=user["username"])
     return msg_doc
 
 @api_router.get("/messages/{friend_id}")
@@ -777,6 +828,10 @@ async def send_group_message(group_id: str, input_data: GroupMessageInput, reque
     }
     await db.group_messages.insert_one(msg_doc)
     msg_doc.pop("_id", None)
+    # Notify all group members except sender
+    for mid in group["members"]:
+        if mid != user["id"]:
+            await _create_notification(mid, "group_message", f"@{user['username']} in {group['name']}: {input_data.content[:50]}", from_user=user["id"], from_username=user["username"], group_id=group_id, group_name=group["name"])
     return msg_doc
 
 @api_router.get("/groups/{group_id}/messages")
@@ -793,6 +848,30 @@ async def get_group_messages(group_id: str, request: Request):
     ).sort("created_at", 1).to_list(200)
     return messages
 
+# --- Notification Endpoints ---
+@api_router.get("/notifications")
+async def get_notifications(request: Request):
+    user = await get_current_user(request)
+    notifications = await db.notifications.find(
+        {"user_id": user["id"]}, {"_id": 0}
+    ).sort("created_at", -1).to_list(50)
+    return notifications
+
+@api_router.get("/notifications/unread-count")
+async def get_unread_count(request: Request):
+    user = await get_current_user(request)
+    count = await db.notifications.count_documents({"user_id": user["id"], "read": False})
+    return {"count": count}
+
+@api_router.put("/notifications/read")
+async def mark_notifications_read(request: Request):
+    user = await get_current_user(request)
+    await db.notifications.update_many(
+        {"user_id": user["id"], "read": False},
+        {"$set": {"read": True}}
+    )
+    return {"message": "All notifications marked as read"}
+
 # --- Startup ---
 @app.on_event("startup")
 async def startup():
@@ -800,6 +879,8 @@ async def startup():
     await db.users.create_index("username", unique=True)
     await db.login_attempts.create_index("identifier")
     await db.email_verifications.create_index("token")
+    await db.notifications.create_index([("user_id", 1), ("created_at", -1)])
+    await db.notifications.create_index([("user_id", 1), ("read", 1)])
 
     # Init storage
     try:

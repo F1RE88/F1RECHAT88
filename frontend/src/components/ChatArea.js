@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
-import { Send, Smile, Paperclip, LogOut, ArrowLeft, Shield, Palette, X, Users, Info } from "lucide-react";
+import { Send, Smile, Paperclip, LogOut, ArrowLeft, Shield, Palette, X, Users, Info, Bell } from "lucide-react";
+import NotificationPanel from "@/components/NotificationPanel";
 import axios from "axios";
 
 const LOGO_URL = "https://customer-assets.emergentagent.com/job_secure-social-hub-2/artifacts/dki0o21d_LOGO.png";
@@ -30,12 +31,16 @@ export default function ChatArea({
   currentUser,
   onLogout,
   onBack,
-  onOpenAdmin
+  onOpenAdmin,
+  notifications,
+  unreadCount,
+  onMarkNotificationsRead,
 }) {
   const [messageText, setMessageText] = useState("");
   const [showBgPicker, setShowBgPicker] = useState(false);
   const [chatBg, setChatBg] = useState("default");
   const [showGroupInfo, setShowGroupInfo] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
   const messagesEndRef = useRef(null);
 
   const activeMessages = selectedGroup ? groupMessages : messages;
@@ -57,47 +62,40 @@ export default function ChatArea({
   const handleSend = (e) => {
     e.preventDefault();
     if (!messageText.trim()) return;
-    if (selectedGroup) {
-      onSendGroupMessage(messageText);
-    } else {
-      onSendMessage(messageText);
-    }
+    if (selectedGroup) onSendGroupMessage(messageText);
+    else onSendMessage(messageText);
     setMessageText("");
   };
 
   const handleBgChange = async (bgId) => {
     setChatBg(bgId);
     setShowBgPicker(false);
-    try {
-      await axios.put(`${API}/settings/chat-background`, { background: bgId }, { withCredentials: true });
-    } catch {}
+    try { await axios.put(`${API}/settings/chat-background`, { background: bgId }, { withCredentials: true }); } catch {}
   };
 
-  const getProfileImageUrl = (obj) => {
-    if (obj?.profile_image) return `${API}/files/${obj.profile_image}`;
-    return null;
-  };
+  const getProfileImageUrl = (obj) => obj?.profile_image ? `${API}/files/${obj.profile_image}` : null;
 
   const getBgStyle = () => {
     const bg = CHAT_BACKGROUNDS.find(b => b.id === chatBg) || CHAT_BACKGROUNDS[0];
     const style = {};
-    if (bg.value.startsWith("linear-gradient")) {
-      style.background = bg.value;
-    } else {
-      style.backgroundColor = bg.value;
-    }
-    if (bg.pattern) {
-      style.backgroundImage = bg.pattern;
-      style.backgroundSize = "20px 20px";
-    }
+    if (bg.value.startsWith("linear-gradient")) style.background = bg.value;
+    else style.backgroundColor = bg.value;
+    if (bg.pattern) { style.backgroundImage = bg.pattern; style.backgroundSize = "20px 20px"; }
     return style;
+  };
+
+  const handleToggleNotifications = () => {
+    setShowNotifications(!showNotifications);
+    setShowBgPicker(false);
+    setShowGroupInfo(false);
+    if (!showNotifications && unreadCount > 0) onMarkNotificationsRead();
   };
 
   const headerButtons = (
     <div className="flex items-center gap-1">
       <button
         data-testid="admin-control-button"
-        onClick={onOpenAdmin}
+        onClick={() => { onOpenAdmin(); setShowNotifications(false); }}
         className="text-orange-400 hover:text-orange-300 transition-colors p-2 hover:bg-orange-600/10 rounded-lg flex items-center gap-1.5 text-xs font-semibold"
         title="Admin Control"
       >
@@ -105,8 +103,21 @@ export default function ChatArea({
         <span className="hidden sm:inline">Admin</span>
       </button>
       <button
+        data-testid="notifications-button"
+        onClick={handleToggleNotifications}
+        className="relative text-gray-400 hover:text-gray-200 transition-colors p-2 hover:bg-neutral-800 rounded-lg"
+        title="Notifications"
+      >
+        <Bell className="w-4 h-4" />
+        {unreadCount > 0 && (
+          <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-600 rounded-full text-[9px] text-white flex items-center justify-center font-bold" data-testid="unread-badge">
+            {unreadCount > 9 ? "9+" : unreadCount}
+          </span>
+        )}
+      </button>
+      <button
         data-testid="bg-picker-button"
-        onClick={() => setShowBgPicker(!showBgPicker)}
+        onClick={() => { setShowBgPicker(!showBgPicker); setShowNotifications(false); }}
         className="text-gray-400 hover:text-gray-200 transition-colors p-2 hover:bg-neutral-800 rounded-lg"
         title="Change chat background"
       >
@@ -123,7 +134,7 @@ export default function ChatArea({
     </div>
   );
 
-  // Empty state - no chat selected
+  // Empty state
   if (!selectedFriend && !selectedGroup) {
     return (
       <div className="flex-1 flex flex-col bg-[#050505] relative" data-testid="chat-area-empty">
@@ -138,6 +149,7 @@ export default function ChatArea({
           {headerButtons}
         </div>
         {showBgPicker && <BackgroundPicker current={chatBg} onSelect={handleBgChange} onClose={() => setShowBgPicker(false)} />}
+        {showNotifications && <NotificationPanel notifications={notifications} onClose={() => setShowNotifications(false)} onMarkRead={onMarkNotificationsRead} />}
         <div className="flex-1 flex items-center justify-center" style={getBgStyle()}>
           <div className="text-center">
             <img src={LOGO_URL} alt="F1RECHAT" className="w-24 h-24 mx-auto mb-4 opacity-30" />
@@ -156,7 +168,6 @@ export default function ChatArea({
     );
   }
 
-  // Determine chat info
   const isGroup = !!selectedGroup;
   const chatName = isGroup ? selectedGroup.name : `@${selectedFriend.username}`;
   const chatSubtitle = isGroup
@@ -165,7 +176,7 @@ export default function ChatArea({
 
   return (
     <div className="flex-1 flex flex-col bg-[#050505] relative" data-testid={isGroup ? "chat-area-group" : "chat-area-active"}>
-      {/* Chat Header */}
+      {/* Header */}
       <div className="h-14 border-b border-neutral-800 bg-[#0A0A0A] flex items-center justify-between px-4">
         <div className="flex items-center gap-3">
           <button data-testid="chat-back-button" onClick={onBack} className="md:hidden text-gray-400 hover:text-white transition-colors p-1">
@@ -189,17 +200,12 @@ export default function ChatArea({
           )}
           <div>
             <p className="text-sm font-semibold text-white font-['Cairo']">{chatName}</p>
-            <p className="text-xs text-gray-500 font-['Tajawal']">{chatSubtitle}</p>
+            <p className={`text-xs font-['Tajawal'] ${!isGroup && selectedFriend.online ? "text-green-400" : "text-gray-500"}`}>{chatSubtitle}</p>
           </div>
         </div>
         <div className="flex items-center gap-1">
           {isGroup && (
-            <button
-              data-testid="group-info-button"
-              onClick={() => setShowGroupInfo(!showGroupInfo)}
-              className="text-gray-400 hover:text-gray-200 transition-colors p-2 hover:bg-neutral-800 rounded-lg"
-              title="Group Info"
-            >
+            <button data-testid="group-info-button" onClick={() => { setShowGroupInfo(!showGroupInfo); setShowNotifications(false); }} className="text-gray-400 hover:text-gray-200 transition-colors p-2 hover:bg-neutral-800 rounded-lg" title="Group Info">
               <Info className="w-4 h-4" />
             </button>
           )}
@@ -210,6 +216,7 @@ export default function ChatArea({
       {/* Popups */}
       {showBgPicker && <BackgroundPicker current={chatBg} onSelect={handleBgChange} onClose={() => setShowBgPicker(false)} />}
       {showGroupInfo && isGroup && <GroupInfoPanel group={selectedGroup} onClose={() => setShowGroupInfo(false)} />}
+      {showNotifications && <NotificationPanel notifications={notifications} onClose={() => setShowNotifications(false)} onMarkRead={onMarkNotificationsRead} />}
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3" style={getBgStyle()} data-testid="messages-container">
@@ -242,7 +249,7 @@ export default function ChatArea({
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Message Input */}
+      {/* Input */}
       <form onSubmit={handleSend} className="p-4 border-t border-neutral-800 bg-[#0A0A0A]" data-testid="message-form">
         <div className="flex items-center gap-2">
           <button type="submit" data-testid="send-message-button" className="text-red-500 hover:text-red-400 transition-colors p-2 hover:bg-red-600/10 rounded-lg">
@@ -273,30 +280,19 @@ function BackgroundPicker({ current, onSelect, onClose }) {
       </div>
       <div className="grid grid-cols-4 gap-2">
         {CHAT_BACKGROUNDS.map((bg) => (
-          <button
-            key={bg.id}
-            data-testid={`bg-option-${bg.id}`}
-            onClick={() => onSelect(bg.id)}
-            className={`w-full aspect-square rounded-lg border-2 transition-all hover:scale-105 ${
-              current === bg.id ? "border-red-500 ring-1 ring-red-500/50" : "border-neutral-700 hover:border-neutral-500"
-            }`}
-            style={{
-              background: bg.value.startsWith("linear") ? bg.value : bg.value,
-              backgroundImage: bg.pattern || undefined,
-              backgroundSize: bg.pattern ? "10px 10px" : undefined,
-            }}
+          <button key={bg.id} data-testid={`bg-option-${bg.id}`} onClick={() => onSelect(bg.id)}
+            className={`w-full aspect-square rounded-lg border-2 transition-all hover:scale-105 ${current === bg.id ? "border-red-500 ring-1 ring-red-500/50" : "border-neutral-700 hover:border-neutral-500"}`}
+            style={{ background: bg.value.startsWith("linear") ? bg.value : bg.value, backgroundImage: bg.pattern || undefined, backgroundSize: bg.pattern ? "10px 10px" : undefined }}
             title={bg.label}
           />
         ))}
       </div>
-      <p className="text-xs text-gray-500 mt-2 text-center font-['Tajawal']">Choose your chat background</p>
     </div>
   );
 }
 
 function GroupInfoPanel({ group, onClose }) {
   const [members, setMembers] = useState([]);
-
   useEffect(() => {
     const fetchInfo = async () => {
       try {
